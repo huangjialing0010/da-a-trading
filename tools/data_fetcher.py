@@ -88,15 +88,11 @@ def fetch_daily_kline(code: str, start_date: str = "20100101",
 
 
 def fetch_current_price(code: str) -> float | None:
-    """获取个股最新价"""
-    try:
-        df = ak.stock_zh_a_spot_em()
-        row = df[df["代码"] == code]
-        if not row.empty:
-            return float(row.iloc[0]["最新价"])
-    except Exception:
-        pass
-    return None
+    """获取个股最新价（从日K线缓存取收盘价，避免全市场下载）"""
+    kline = fetch_daily_kline(code)
+    if kline.empty:
+        return None
+    return float(kline["收盘"].iloc[-1])
 
 
 def fetch_all_spot() -> pd.DataFrame:
