@@ -1,0 +1,71 @@
+{
+  "cash": 550333.0,
+  "positions": {
+    "000975": {
+      "code": "000975",
+      "name": "山金国际",
+      "quantity": 8300,
+      "avg_cost": 18.04,
+      "current_price": 17.31,
+      "strategy": "deep_value"
+    },
+    "002027": {
+      "code": "002027",
+      "name": "分众传媒",
+      "quantity": 31100,
+      "avg_cost": 4.82,
+      "current_price": 4.76,
+      "strategy": "deep_value"
+    },
+    "688615": {
+      "code": "688615",
+      "name": "合合信息",
+      "quantity": 1300,
+      "avg_cost": 115.41,
+      "current_price": 108.0,
+      "strategy": "deep_value"
+    }
+  },
+  "trades": [
+    {
+      "time": "2026-06-26T11:15:59.974938",
+      "code": "000975",
+      "name": "山金国际",
+      "direction": "BUY",
+      "price": 18.04,
+      "quantity": 8300,
+      "reason": "首批建仓: 距高点-57%, ROE 8.9%, CFO/EPS 1.79, 利润+101%",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-06-26T11:15:59.975430",
+      "code": "002027",
+      "name": "分众传媒",
+      "direction": "BUY",
+      "price": 4.82,
+      "quantity": 31100,
+      "reason": "首批建仓: 距高点-45%, ROE 12.1%, CFO/EPS 1.21, 利润+58%",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-06-26T11:36:50.209998",
+      "code": "688615",
+      "name": "合合信息",
+      "direction": "BUY",
+      "price": 115.41,
+      "quantity": 1300,
+      "reason": "首批建仓: 距高点-69%, ROE 5.2%, 利润+34%, CFO/EPS 1.23, AI+大数据",
+      "pnl": 0.0
+    }
+  ],
+  "equity_snapshots": [
+    {
+      "date": "2026-06-26",
+      "total_value": 982442.0,
+      "cash": 550333.0,
+      "market_value": 432109.0,
+      "position_count": 3
+    }
+  ],
+  "created_at": "2026-06-26T11:15:59.974251"
+}

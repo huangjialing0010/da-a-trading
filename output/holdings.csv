@@ -1,0 +1,4 @@
+date,code,name,quantity,avg_cost,current_price,market_value,pnl_pct,weight_pct,strategy
+2026-06-26,000975,山金国际,8300,18.04,17.31,143673.0,-4.05,14.62,deep_value
+2026-06-26,002027,分众传媒,31100,4.82,4.76,148036.0,-1.24,15.07,deep_value
+2026-06-26,688615,合合信息,1300,115.41,108.0,140400.0,-6.42,14.29,deep_value
