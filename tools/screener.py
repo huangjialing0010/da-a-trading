@@ -42,7 +42,7 @@ def load_config() -> dict:
 
 # === 深度价值筛选（新版：成分股 + 逐个K线） ===
 
-def screen_deep_value(config: dict, n: int = 30, max_check: int = 300,
+def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
                       quick_mode: bool = False) -> list[Candidate]:
     """深度价值筛选
 
@@ -55,6 +55,8 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int = 300,
     quick_mode: 跳过财务验证，仅做量价筛选（快5倍）
     """
     dv = config["deep_value"]
+    if max_check is None:
+        max_check = dv.get("universe_top_n", 70)
     universe = fetch_stock_universe()
 
     if universe.empty:
@@ -449,7 +451,7 @@ def run_full_screening(n: int = 30, quick: bool = False) -> dict:
     config = load_config()
     results = {"deep_value": [], "panic": [], "event_arb": []}
 
-    results["deep_value"] = screen_deep_value(config, n=n, max_check=100, quick_mode=quick)
+    results["deep_value"] = screen_deep_value(config, n=n, quick_mode=quick)
     results["panic"] = screen_panic(config)
     results["event_arb"] = screen_event_arb(config)
 

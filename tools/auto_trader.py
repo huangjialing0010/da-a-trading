@@ -11,7 +11,7 @@ import sys
 import io
 import json
 import yaml
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from pathlib import Path
 
 from .account import VirtualAccount, Position
@@ -265,16 +265,32 @@ def daily_update() -> str:
 
     # 4. 记录净值
     acc.record_snapshot()
+
+    # 数据新鲜度（取任一持仓K线日期）
+    data_date = "未知"
+    for p in acc.get_holdings():
+        k = fetch_daily_kline(p.code)
+        if not k.empty:
+            data_date = str(k.index[-1].date())
+            break
+    days_stale = (today - datetime.strptime(data_date, "%Y-%m-%d").date()).days if data_date != "未知" else 99
+    stale_warn = " ⚠ 数据过期!" if days_stale > 2 else ""
+
     lines.append(f"\n总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
+    lines.append(f"数据日期: {data_date}（{days_stale}天前）{stale_warn}")
 
     # 5. 保存持仓快照到 CSV
     _save_holdings_snapshot(acc)
 
-    # 6. 周五自动生成周报
+    # 6. 周报/月报
     if today.weekday() == 4:  # 周五
         from .review import weekly_review
-        report = weekly_review(acc)
-        lines.append(f"\n[周报已生成] output/reports/weekly_{today.strftime('%Y%m%d')}.md")
+        weekly_review(acc)
+        lines.append(f"\n[周报] weekly_{today.strftime('%Y%m%d')}.md")
+    if today.day == 1:  # 每月1号
+        from .review import monthly_review
+        monthly_review(acc)
+        lines.append(f"[月报] monthly_{today.strftime('%Y%m')}.md")
 
     # 7. 持久化分批状态
     _save_batch_state(batch_state)

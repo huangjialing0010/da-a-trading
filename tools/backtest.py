@@ -65,16 +65,17 @@ class BacktestEngine:
     """深度价值策略历史回测"""
 
     def __init__(self, start_date: str = "2019-01-01", end_date: str | None = None,
-                 initial_cash: float = 1_000_000, universe_size: int = 300,
+                 initial_cash: float = 1_000_000, universe_size: int | None = None,
                  config_overrides: dict | None = None):
         self.start_date = start_date
         self.end_date = end_date or date.today().isoformat()
         self.initial_cash = initial_cash
         self.cash = initial_cash
-        self.universe_size = universe_size
 
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             self.config = yaml.safe_load(f)
+
+        self.universe_size = universe_size or self.config["deep_value"].get("universe_top_n", 70)
 
         # 应用参数覆盖
         if config_overrides:

@@ -16,7 +16,8 @@ deep_value:
   max_interest_debt_ratio: 0.30 # 有息负债率上限
   max_goodwill_ratio: 0.30      # 商誉/净资产上限
   max_pledge_ratio: 0.50        # 大股东质押率上限
-  min_drawdown_52w: 0.40        # 距52周高点最小跌幅（回测验证：沪深300池40%最优；大盘蓝筹跌40%是恐慌，小票跌40%是真不行）
+  min_drawdown_52w: 0.40        # 距52周高点最小跌幅
+  universe_top_n: 70             # 仅扫描沪深300前70大市值（回测拐点在80-100，70最优：+66.71%超额+48%）
   volume_shrink_days: 5         # 成交量萎缩连续天数
   volume_shrink_ratio: 0.50     # 成交量/20日均量上限
   pe_percentile_max: 0.20       # PE近5年分位上限（最低20%区间）
