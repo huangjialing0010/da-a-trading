@@ -455,11 +455,12 @@ def run_full_screening(n: int = 30, quick: bool = False) -> dict:
     results["panic"] = screen_panic(config)
     results["event_arb"] = screen_event_arb(config)
 
-    _save_candidates(results)
+    filename = "candidates_quick.csv" if quick else "candidates.csv"
+    _save_candidates(results, filename)
     return results
 
 
-def _save_candidates(results: dict):
+def _save_candidates(results: dict, filename: str = "candidates.csv"):
     """保存候选池到CSV"""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -476,10 +477,10 @@ def _save_candidates(results: dict):
 
     if rows:
         df = pd.DataFrame(rows)
-        df.to_csv(OUTPUT_DIR / "candidates.csv", index=False, encoding="utf-8")
+        df.to_csv(OUTPUT_DIR / filename, index=False, encoding="utf-8")
         count = len(rows)
         dv = sum(1 for r in rows if r["strategy"] == "deep_value")
-        print(f"\n[screener] 候选池已保存: {count} 只 (深度价值{dv}只) -> {OUTPUT_DIR / 'candidates.csv'}")
+        print(f"\n[screener] 候选池已保存: {count} 只 (深度价值{dv}只) -> {OUTPUT_DIR / filename}")
 
 
 def load_candidates() -> dict:
