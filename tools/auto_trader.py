@@ -10,40 +10,89 @@
 import sys
 import io
 import json
+import yaml
 from datetime import date, timedelta
 from pathlib import Path
 
 from .account import VirtualAccount, Position
-from .data_fetcher import fetch_daily_kline, fetch_financial_data
+from .data_fetcher import fetch_daily_kline, fetch_financial_data, fetch_market_water_level
 from .signal_engine import check_monitor
 
 BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
 
-# 交易参数
-BATCH_CONFIG = {
-    "000975": {"name": "山金国际", "batch": 1, "batches": [
-        {"qty": 8300, "price": 18.04, "trigger": None},
-        {"qty": 9200, "price": 16.24, "trigger": 16.24},
-        {"qty": 11000, "price": None, "trigger": "stable"},
-    ]},
-    "002027": {"name": "分众传媒", "batch": 1, "batches": [
-        {"qty": 31100, "price": 4.82, "trigger": None},
-        {"qty": 34500, "price": 4.34, "trigger": 4.34},
-        {"qty": 41400, "price": None, "trigger": "stable"},
-    ]},
-    "688615": {"name": "合合信息", "batch": 1, "batches": [
-        {"qty": 1300, "price": 115.41, "trigger": None},
-        {"qty": 1400, "price": 103.87, "trigger": 103.87},
-        {"qty": 1700, "price": None, "trigger": "stable"},
-    ]},
-}
+BATCH_STATE_FILE = OUTPUT_DIR / "batch_state.json"
+PANIC_STATE_FILE = OUTPUT_DIR / "panic_state.json"
+
+
+def _load_batch_state() -> dict:
+    if BATCH_STATE_FILE.exists():
+        with open(BATCH_STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_batch_state(state: dict):
+    with open(BATCH_STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def _load_panic_state() -> dict:
+    if PANIC_STATE_FILE.exists():
+        with open(PANIC_STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"active": False, "batch": 0, "entries": []}
+
+
+def _save_panic_state(state: dict):
+    with open(PANIC_STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def _generate_batch_plan(code: str, name: str, first_price: float, first_qty: int) -> dict:
+    """根据首笔交易自动生成三批建仓计划"""
+    cfg = _load_config()["deep_value"]["batch_entry"]
+    total_planned = first_qty / cfg[0]["ratio"]
+    batches = [{"qty": first_qty, "price": first_price, "trigger": None}]
+    qty2 = int(total_planned * cfg[1]["ratio"] / 100) * 100
+    price2 = round(first_price * (1 - cfg[1]["drop"]), 2)
+    batches.append({"qty": max(qty2, 100), "price": price2, "trigger": price2})
+    qty3 = int(total_planned * cfg[2]["ratio"] / 100) * 100
+    batches.append({"qty": max(qty3, 100), "price": None, "trigger": "stable"})
+    return {"name": name, "batch": 1, "batches": batches}
+
+
+def _load_config():
+    with open(BASE_DIR / "config.yaml", "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
 
 def daily_update() -> str:
     lines = []
     acc = VirtualAccount()
     today = date.today()
+    batch_state = _load_batch_state()
+
+    # 0. 为新持仓自动生成分批计划
+    holding_codes = set(acc.get_holding_codes())
+    for code in holding_codes:
+        if code not in batch_state:
+            pos = acc.get_position(code)
+            # 从交易记录找首笔买入价和数量
+            first_buy = None
+            for t in acc.state.trades:
+                if t.code == code and t.direction == "BUY":
+                    first_buy = t
+                    break
+            if first_buy:
+                batch_state[code] = _generate_batch_plan(
+                    code, pos.name, first_buy.price, first_buy.quantity)
+                lines.append(f"[{pos.name}] 自动生成三批建仓计划")
+
+    # 清理已清仓的分批计划
+    stale = [c for c in batch_state if c not in holding_codes]
+    for c in stale:
+        del batch_state[c]
 
     # 1. 更新持仓价格
     for pos in acc.get_holdings():
@@ -68,7 +117,7 @@ def daily_update() -> str:
     for s in signals:
         if s.type == "SELL" and s.urgency == "urgent":
             code = s.code
-            cfg = BATCH_CONFIG.get(code)
+            cfg = batch_state.get(code)
 
             # 如果是硬止损 且 还有分批未完成 → 用宽松止损线
             if "硬止损" in s.reason and cfg and cfg["batch"] < len(cfg["batches"]):
@@ -88,7 +137,7 @@ def daily_update() -> str:
             lines.append(f"  [卖出] {msg}")
 
     # 3. 检查分批加仓
-    for code, cfg in BATCH_CONFIG.items():
+    for code, cfg in batch_state.items():
         if code not in acc.get_holding_codes():
             continue
 
@@ -142,6 +191,78 @@ def daily_update() -> str:
                 lines.append(f"  加仓: {msg}")
                 cfg["batch"] = batch_num + 1
 
+    # 3.5 恐慌策略
+    wl = fetch_market_water_level()
+    erp = wl.get("erp", 0)
+    panic_cfg = _load_config()["panic"]
+    panic_state = _load_panic_state()
+    etf_names = {"510300": "沪深300ETF", "510500": "中证500ETF"}
+
+    # 清理已手动卖出的恐慌持仓
+    if panic_state["active"]:
+        for entry in list(panic_state["entries"]):
+            if entry["code"] not in acc.get_holding_codes() and panic_state["batch"] >= panic_cfg["batches"]:
+                panic_state["active"] = False
+                panic_state["batch"] = 0
+                panic_state["entries"] = []
+                lines.append("[恐慌] 全部批次已完成，退出恐慌模式")
+                break
+
+    # 恐慌触发
+    if erp >= panic_cfg["trigger_erp"] and not panic_state["active"]:
+        lines.append(f"[恐慌触发] ERP={erp:.2%} >= {panic_cfg['trigger_erp']:.0%}")
+        etfs = panic_cfg["etf_list"]
+        per_batch_cash = acc.state.cash * 0.4 / panic_cfg["batches"]
+        per_etf_cash = per_batch_cash / len(etfs)
+        entries = []
+        for etf_code in etfs:
+            kline = fetch_daily_kline(etf_code, ttl_days=0)
+            if kline.empty:
+                continue
+            price = float(kline.iloc[-1]["收盘"])
+            qty = int(per_etf_cash / price / 100) * 100
+            if qty >= 100:
+                ok, msg = acc.buy(etf_code, etf_names.get(etf_code, etf_code),
+                                  price, qty, "panic",
+                                  f"恐慌第1批: ERP={erp:.2%}")
+                lines.append(f"  [恐慌买入] {msg}")
+                entries.append({"code": etf_code, "name": etf_names.get(etf_code, etf_code),
+                              "first_price": price, "per_batch_qty": qty})
+        if entries:
+            panic_state = {"active": True, "batch": 1, "entries": entries}
+
+    # 恐慌加仓
+    elif panic_state["active"] and panic_state["batch"] < panic_cfg["batches"]:
+        batch_drop = panic_cfg["batch_drop"]
+        for entry in panic_state["entries"]:
+            kline = fetch_daily_kline(entry["code"], ttl_days=0)
+            if kline.empty:
+                continue
+            current = float(kline.iloc[-1]["收盘"])
+            target_drop = panic_state["batch"] * batch_drop
+            target_price = entry["first_price"] * (1 - target_drop)
+            if current <= target_price:
+                qty = entry["per_batch_qty"]
+                ok, msg = acc.buy(entry["code"], entry["name"], current, qty, "panic",
+                                  f"恐慌第{panic_state['batch']+1}批: 跌{target_drop:.0%}至{target_price:.2f}")
+                lines.append(f"  [恐慌加仓] {msg}")
+                panic_state["batch"] += 1
+                break
+
+    # 恐慌退出
+    if panic_state["active"] and erp < panic_cfg["exit_erp"]:
+        lines.append(f"[恐慌退出] ERP={erp:.2%} < {panic_cfg['exit_erp']:.0%}")
+        for entry in panic_state["entries"]:
+            code = entry["code"]
+            pos = acc.get_position(code)
+            if pos:
+                ok, msg = acc.sell(code, pos.current_price, pos.quantity,
+                                   f"恐慌退出: ERP回落至{erp:.2%}")
+                lines.append(f"  [恐慌卖出] {msg}")
+        panic_state = {"active": False, "batch": 0, "entries": []}
+
+    _save_panic_state(panic_state)
+
     # 4. 记录净值
     acc.record_snapshot()
     lines.append(f"\n总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
@@ -154,6 +275,18 @@ def daily_update() -> str:
         from .review import weekly_review
         report = weekly_review(acc)
         lines.append(f"\n[周报已生成] output/reports/weekly_{today.strftime('%Y%m%d')}.md")
+
+    # 7. 持久化分批状态
+    _save_batch_state(batch_state)
+
+    # 8. 每日刷新候选池（周五全量财务验证，其余快速模式）
+    try:
+        from .screener import run_full_screening
+        quick = today.weekday() != 4
+        run_full_screening(n=30, quick=quick)
+        lines.append(f"\n[候选池] 已刷新（{'快速' if quick else '全量'}模式）")
+    except Exception as e:
+        lines.append(f"\n[候选池] 刷新失败: {e}")
 
     return "\n".join(lines)
 

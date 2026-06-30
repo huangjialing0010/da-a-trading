@@ -1,0 +1,65 @@
+{
+  "002027": {
+    "name": "分众传媒",
+    "batch": 1,
+    "batches": [
+      {
+        "qty": 31100,
+        "price": 4.82,
+        "trigger": null
+      },
+      {
+        "qty": 31100,
+        "price": 4.34,
+        "trigger": 4.34
+      },
+      {
+        "qty": 41400,
+        "price": null,
+        "trigger": "stable"
+      }
+    ]
+  },
+  "000975": {
+    "name": "山金国际",
+    "batch": 1,
+    "batches": [
+      {
+        "qty": 8300,
+        "price": 18.04,
+        "trigger": null
+      },
+      {
+        "qty": 8300,
+        "price": 16.24,
+        "trigger": 16.24
+      },
+      {
+        "qty": 11000,
+        "price": null,
+        "trigger": "stable"
+      }
+    ]
+  },
+  "002558": {
+    "name": "巨人网络",
+    "batch": 1,
+    "batches": [
+      {
+        "qty": 3800,
+        "price": 27.23,
+        "trigger": null
+      },
+      {
+        "qty": 3800,
+        "price": 24.51,
+        "trigger": 24.51
+      },
+      {
+        "qty": 5000,
+        "price": null,
+        "trigger": "stable"
+      }
+    ]
+  }
+}

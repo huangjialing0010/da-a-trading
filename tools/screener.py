@@ -110,15 +110,14 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int = 300,
 
     # 按评分排序
     passed.sort(key=lambda x: x["score"], reverse=True)
-    top = passed[:n]
 
-    if not top:
+    if not passed:
         return []
 
-    # --- Pass 2: 财务深度验证（非quick模式） ---
+    # --- Pass 2: 财务深度验证（全量，不截断） ---
     candidates = []
     if quick_mode:
-        for p in top:
+        for p in passed[:n]:
             candidates.append(Candidate(
                 code=p["code"], name=p["name"], strategy="deep_value",
                 score=p["score"],
@@ -127,8 +126,9 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int = 300,
             ))
         return candidates
 
-    print(f"[screener] 对头部 {len(top)} 只进行财务深度验证...")
-    for i, p in enumerate(top):
+    n_validate = len(passed)
+    print(f"[screener] 对全部 {n_validate} 只进行财务深度验证...")
+    for i, p in enumerate(passed):
         code = p["code"]
         name = p["name"]
         score = p["score"]
@@ -136,7 +136,7 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int = 300,
         metrics = dict(p["metrics"])
 
         if (i + 1) % 5 == 0:
-            print(f"  财务验证 [{i+1}/{len(top)}]...")
+            print(f"  财务验证 [{i+1}/{n_validate}]...")
 
         fin_score, fin_flags, fin_metrics = _financial_check(code, dv)
         if fin_score >= 0:
@@ -218,8 +218,9 @@ def _financial_check(code: str, config: dict) -> tuple[float, list[str], dict]:
         if roe >= config["min_deducted_roe"]:
             score += 15
             flags.append(f"ROE {roe*100:.1f}%")
-        elif roe > 0:
-            flags.append(f"ROE {roe*100:.1f}%（偏低）")
+        else:
+            flags.append(f"[淘汰]ROE {roe*100:.1f}%低于阈值{config['min_deducted_roe']:.0%}")
+            return -1, flags, metrics
 
     # 资产负债率
     debt = fin.get("debt_ratio")
@@ -241,8 +242,8 @@ def _financial_check(code: str, config: dict) -> tuple[float, list[str], dict]:
             score += 12
             flags.append(f"CFO/EPS {cf_ratio:.2f}")
         elif ocf_ps < 0:
-            flags.append("[警告]经营现金流为负")
-            score -= 10
+            flags.append("[淘汰]经营现金流为负")
+            return -1, flags, metrics
     elif ocf_ps is not None and ocf_ps > 0:
         score += 8
         flags.append(f"经营现金流每股{ocf_ps:.2f}")
@@ -251,9 +252,9 @@ def _financial_check(code: str, config: dict) -> tuple[float, list[str], dict]:
     profit_yoy = fin.get("profit_yoy")
     if profit_yoy is not None:
         metrics["profit_yoy"] = round(profit_yoy * 100, 2)
-        if profit_yoy <= config.get("stops", {}).get("fundamental_stop_profit", -0.2):
-            score -= 20
-            flags.append(f"[警告]净利润同比{profit_yoy*100:.1f}%，大幅下滑")
+        if profit_yoy <= -0.20:
+            flags.append(f"[淘汰]净利润同比{profit_yoy*100:.1f}%，大幅下滑")
+            return -1, flags, metrics
         elif profit_yoy > 0:
             score += 10
             flags.append(f"利润同比+{profit_yoy*100:.1f}%")

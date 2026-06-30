@@ -10,7 +10,7 @@ import pandas as pd
 import yaml
 
 from .account import VirtualAccount, Position
-from .data_fetcher import fetch_daily_kline, fetch_current_price, fetch_financial_indicators
+from .data_fetcher import fetch_daily_kline, fetch_current_price, fetch_financial_indicators, fetch_price_percentile
 from .screener import load_candidates, Candidate
 
 BASE_DIR = Path(__file__).parent.parent
@@ -59,6 +59,9 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
     signals = []
     stops = config["stops"]
     tp = config["take_profit"]
+    dv = config["deep_value"]
+    hold_min_days = dv.get("hold_min_months", 6) * 30
+    hold_max_days = dv.get("hold_max_months", 18) * 30
 
     for pos in account.get_holdings():
         code = pos.code
@@ -81,8 +84,8 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
             ))
             continue
 
-        # --- 时间止损 ---
-        if held_days > stops["time_stop_months"] * 30 and pnl_pct <= 0:
+        # --- 时间止损（最短持有期内跳过）---
+        if held_days >= hold_min_days and held_days > stops["time_stop_months"] * 30 and pnl_pct <= 0:
             cut_qty = int(pos.quantity * stops["time_stop_cut_ratio"] / 100) * 100
             if cut_qty > 0:
                 signals.append(Signal(
@@ -104,6 +107,20 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                     reason=f"从高点{recent_high:.2f}回撤{drawdown_from_high:.1%}，触发止盈",
                     price=current_price, quantity=pos.quantity, urgency="urgent",
                 ))
+
+        # --- PE分位止盈（5年价格分位近似）---
+        if pnl_pct > 0 and "pe_percentile_start_sell" in tp:
+            price_pct = fetch_price_percentile(code, years=5)
+            if price_pct is not None and price_pct >= tp["pe_percentile_start_sell"]:
+                ratio = tp.get("batch_sell_ratio", 0.33)
+                sell_qty = int(pos.quantity * ratio / 100) * 100
+                if sell_qty >= 100:
+                    signals.append(Signal(
+                        type="SELL", code=code, name=pos.name, strategy=pos.strategy,
+                        action=f"PE分位止盈：卖出 {sell_qty}股",
+                        reason=f"价格近5年{price_pct:.0%}分位，触发{tp['pe_percentile_start_sell']:.0%}阈值",
+                        price=current_price, quantity=sell_qty, urgency="normal",
+                    ))
 
         # --- 基本面恶化 ---
         # 只在财报季（4月、8月、10月）检查
@@ -127,6 +144,15 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                         reason=f"利润同比{profit_growth:.1%}，触及{stops['fundamental_stop_profit']:.0%}",
                         price=current_price, quantity=pos.quantity, urgency="urgent",
                     ))
+
+        # --- 最长持有期 ---
+        if held_days > hold_max_days:
+            signals.append(Signal(
+                type="SELL", code=code, name=pos.name, strategy=pos.strategy,
+                action=f"持仓到期：全部卖出 {pos.quantity}股",
+                reason=f"持仓{held_days}天，超过最长持有期{hold_max_days}天",
+                price=current_price, quantity=pos.quantity, urgency="urgent",
+            ))
 
     return signals
 

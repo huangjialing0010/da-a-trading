@@ -1,5 +1,5 @@
 {
-  "cash": 550333.0,
+  "cash": 588195.0,
   "positions": {
     "000975": {
       "code": "000975",
@@ -17,12 +17,12 @@
       "current_price": 4.82,
       "strategy": "deep_value"
     },
-    "688615": {
-      "code": "688615",
-      "name": "合合信息",
-      "quantity": 1300,
-      "avg_cost": 115.41,
-      "current_price": 108.72,
+    "002558": {
+      "code": "002558",
+      "name": "巨人网络",
+      "quantity": 3800,
+      "avg_cost": 27.23,
+      "current_price": 27.23,
       "strategy": "deep_value"
     }
   },
@@ -56,6 +56,26 @@
       "quantity": 1300,
       "reason": "首批建仓: 距高点-69%, ROE 5.2%, 利润+34%, CFO/EPS 1.23, AI+大数据",
       "pnl": 0.0
+    },
+    {
+      "time": "2026-06-30T09:28:49.396977",
+      "code": "688615",
+      "name": "合合信息",
+      "direction": "SELL",
+      "price": 108.72,
+      "quantity": 1300,
+      "reason": "主动卖出: ROE 5.2%低于策略阈值6%, AI小盘面临7月去伪存真行情, 投资逻辑不成立",
+      "pnl": -8696.999999999996
+    },
+    {
+      "time": "2026-06-30T11:39:38.996834",
+      "code": "002558",
+      "name": "巨人网络",
+      "direction": "BUY",
+      "price": 27.23,
+      "quantity": 3800,
+      "reason": "首批建仓: 距高点-49%, ROE 6.8%, CFO/EPS 1.23, 利润+211%, 负债19.9%",
+      "pnl": 0.0
     }
   ],
   "equity_snapshots": [
@@ -71,6 +91,13 @@
       "total_value": 986406.0,
       "cash": 550333.0,
       "market_value": 436073.0,
+      "position_count": 3
+    },
+    {
+      "date": "2026-06-30",
+      "total_value": 986406.0,
+      "cash": 588195.0,
+      "market_value": 398211.0,
       "position_count": 3
     }
   ],

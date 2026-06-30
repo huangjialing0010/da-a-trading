@@ -373,7 +373,7 @@ def fetch_market_water_level() -> dict:
 # === 股票池 ===
 
 def fetch_stock_universe() -> pd.DataFrame:
-    """获取筛选股票池：沪深300 + 中证500成分股（去重）"""
+    """获取筛选股票池：沪深300成分股"""
     cache_file = _cache_path(MARKET_DIR, "stock_universe")
     if _cache_valid(cache_file, ttl_days=7):
         df = pd.read_csv(cache_file, dtype={"code": str})
@@ -382,18 +382,17 @@ def fetch_stock_universe() -> pd.DataFrame:
 
     stocks = {}
     try:
-        for idx_code, idx_name in [("000300", "沪深300"), ("000905", "中证500")]:
+        for idx_code, idx_name in [("000300", "沪深300")]:
             df = ak.index_stock_cons_csindex(symbol=idx_code)
             if df is not None and not df.empty:
-                # 列: 日期,指数代码,指数名称,英文名,成分券代码,成分券名称,英文名,交易所,交易所英文
-                code_col = df.columns[4]  # 成分券代码
-                name_col = df.columns[5]  # 成分券名称
+                code_col = df.columns[4]
+                name_col = df.columns[5]
                 for _, row in df.iterrows():
                     code = str(row[code_col]).zfill(6)
                     name = str(row[name_col])
                     if code not in stocks:
                         stocks[code] = {"code": code, "name": name, "index": idx_name}
-        print(f"[data_fetcher] 股票池: {len(stocks)} 只 (沪深300 + 中证500)")
+        print(f"[data_fetcher] 股票池: {len(stocks)} 只 (沪深300)")
     except Exception as e:
         print(f"[data_fetcher] 获取成分股失败: {e}")
         # 降级：用全量股票代码
@@ -460,3 +459,17 @@ def fetch_stock_quick_snapshot(code: str) -> dict | None:
         "shrink_days": shrink_days,
         "price_percentile_1y": price_pct,
     }
+
+
+def fetch_price_percentile(code: str, years: int = 5) -> float | None:
+    """当前价格在N年历史中的分位 (0~1)，作为PE估值分位的近似代理"""
+    kline = fetch_daily_kline(code)
+    if kline.empty:
+        return None
+    close = kline["收盘"]
+    n_days = years * 250
+    if len(close) < min(250, n_days):
+        return None
+    recent = close.iloc[-min(len(close), n_days):]
+    current = float(recent.iloc[-1])
+    return float((recent <= current).mean())

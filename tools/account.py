@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 ACCOUNT_FILE = os.path.join(os.path.dirname(__file__), "..", "output", "account.json")
+TRADES_CSV = os.path.join(os.path.dirname(__file__), "..", "output", "trades.csv")
 
 
 @dataclass
@@ -107,6 +108,20 @@ class VirtualAccount:
         }
         with open(ACCOUNT_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        self._save_trades_csv()
+
+    def _save_trades_csv(self):
+        """同步交易记录到 CSV"""
+        import csv
+        with open(TRADES_CSV, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["time", "code", "name", "direction", "price", "quantity", "amount", "pnl", "reason"])
+            for t in self.state.trades:
+                w.writerow([
+                    t.time, t.code, t.name, t.direction,
+                    t.price, t.quantity, round(t.price * t.quantity, 2),
+                    round(t.pnl, 2), t.reason,
+                ])
 
     def _deserialize(self, data: dict) -> AccountState:
         positions = {}
@@ -240,16 +255,11 @@ class VirtualAccount:
         return (date.today() - buy_date).days
 
     def get_total_return(self) -> float:
-        """总收益率"""
-        initial = 0.0
-        if self.state.equity_snapshots:
-            initial = self.state.equity_snapshots[0]["total_value"]
-        if initial == 0:
-            initial = self.state.cash
-            for t in self.state.trades:
-                if t.direction == "BUY":
-                    initial += t.price * t.quantity
-        if initial == 0:
+        """总收益率 — 从交易历史反推初始本金"""
+        buy_total = sum(t.price * t.quantity for t in self.state.trades if t.direction == "BUY")
+        sell_total = sum(t.price * t.quantity for t in self.state.trades if t.direction == "SELL")
+        initial = self.state.cash + buy_total - sell_total
+        if initial <= 0:
             return 0.0
         return self.state.total_value / initial - 1
 

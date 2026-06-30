@@ -21,8 +21,11 @@ python main.py screener
 # 持仓监控（止损/止盈检查）
 python main.py monitor
 
-# 日更（刷新价格+记录快照）
+# 日更（刷新价格+检查止损/加仓+记录快照）
 python tools/auto_trader.py
+
+# 回测（验证策略参数）
+python tools/backtest.py
 ```
 
 ## 筛选逻辑
