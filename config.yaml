@@ -57,9 +57,6 @@ stops:
 take_profit:
   trail_trigger: 0.20           # 涨20%后启动移动止盈
   trail_drawdown: 0.08          # 最高点回撤8%离场
-  pe_percentile_start_sell: 0.50  # PE回到历史中位数开始分批卖
-  pe_percentile_min_profit: 0.10   # PE分位止盈至少盈利10%，避免刚买就卖
-  batch_sell_ratio: 0.33        # 每次卖出比例
 
 # === 行业过滤（选股前自动筛选行业逻辑） ===
 industry_filter:

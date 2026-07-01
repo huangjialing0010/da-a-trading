@@ -10,7 +10,7 @@ import pandas as pd
 import yaml
 
 from .account import VirtualAccount, Position
-from .data_fetcher import fetch_daily_kline, fetch_current_price, fetch_financial_indicators, fetch_price_percentile
+from .data_fetcher import fetch_daily_kline, fetch_current_price, fetch_financial_indicators
 from .screener import load_candidates, Candidate
 
 BASE_DIR = Path(__file__).parent.parent
@@ -108,21 +108,6 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                     price=current_price, quantity=pos.quantity, urgency="urgent",
                 ))
                 continue
-
-        # --- PE分位止盈（5年价格分位近似）---
-        min_profit = tp.get("pe_percentile_min_profit", 0.10)
-        if pnl_pct >= min_profit and "pe_percentile_start_sell" in tp:
-            price_pct = fetch_price_percentile(code, years=5)
-            if price_pct is not None and price_pct >= tp["pe_percentile_start_sell"]:
-                ratio = tp.get("batch_sell_ratio", 0.33)
-                sell_qty = int(pos.quantity * ratio / 100) * 100
-                if sell_qty >= 100:
-                    signals.append(Signal(
-                        type="SELL", code=code, name=pos.name, strategy=pos.strategy,
-                        action=f"PE分位止盈：卖出 {sell_qty}股",
-                        reason=f"价格近5年{price_pct:.0%}分位，触发{tp['pe_percentile_start_sell']:.0%}阈值",
-                        price=current_price, quantity=sell_qty, urgency="urgent",
-                    ))
 
         # --- 基本面恶化 ---
         # 只在财报季（4月、8月、10月）检查

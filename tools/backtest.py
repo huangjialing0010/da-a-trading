@@ -358,20 +358,6 @@ class BacktestEngine:
                         self._sell(code, price, pos.quantity, dt, f"移动止盈 回撤{dd:.1%}")
                         continue
 
-            # PE分位止盈
-            if pnl > 0 and "pe_percentile_start_sell" in self.tp and code in self._klines:
-                kline = self._klines[code]
-                kline.index = pd.to_datetime(kline.index)
-                close_5y = kline[kline.index <= date_str]["收盘"]
-                if len(close_5y) >= 250:
-                    recent_5y = close_5y.tail(min(len(close_5y), 1250))
-                    pct = float((recent_5y <= price).mean())
-                    if pct >= self.tp["pe_percentile_start_sell"]:
-                        ratio = self.tp.get("batch_sell_ratio", 0.33)
-                        sell_qty = int(pos.quantity * ratio / 100) * 100
-                        if sell_qty >= 100:
-                            self._sell(code, price, sell_qty, dt, f"PE分位止盈 {pct:.0%}分位")
-
             # 最长持有期
             hold_max_days = self.dv.get("hold_max_months", 18) * 30
             if held_days > hold_max_days:
