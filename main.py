@@ -211,7 +211,23 @@ def cmd_trade(_args=None):
         strategy = input("策略 (deep_value/panic/event_arb): ").strip()
         reason = input("理由: ").strip()
 
-        # 获取名称
+        # 行业集中度检查
+        try:
+            from tools.industry_analyzer import get_stock_industry
+            info = get_stock_industry(code)
+            if info:
+                same = sum(1 for p in acc.get_holdings()
+                          if get_stock_industry(p.code) and
+                          get_stock_industry(p.code)["level1_name"] == info["level1_name"])
+                if same >= 2:
+                    print(f"⚠ 警告: {info['level1_name']}行业已有{same}只持仓，单行业上限2只")
+                    confirm = input("确认继续买入? (y/N): ").strip().lower()
+                    if confirm != 'y':
+                        print("取消买入")
+                        return
+        except Exception:
+            pass  # 行业数据不可用时不阻拦
+
         name = code
         try:
             from tools.data_fetcher import fetch_daily_kline
