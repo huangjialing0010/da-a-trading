@@ -98,6 +98,18 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
                 score += sector_bonus
                 flags.append(f"行业逻辑支撑 +{sector_bonus}分")
 
+            # 商品周期检测
+            if dv.get("commodity_cycle_check", True):
+                try:
+                    from .commodity_fetcher import check_commodity_cycle
+                    cycle = check_commodity_cycle(name)
+                    if cycle:
+                        flags.append(cycle["warning"])
+                        if cycle["penalty"] > 0:
+                            score -= cycle["penalty"]
+                except Exception:
+                    pass  # 商品数据不可用不影响筛选
+
             metrics["index"] = row.get("index", "")
             passed.append({
                 "code": code, "name": name,

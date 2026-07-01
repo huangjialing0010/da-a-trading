@@ -21,6 +21,7 @@ deep_value:
   volume_shrink_days: 5         # 成交量萎缩连续天数
   volume_shrink_ratio: 0.50     # 成交量/20日均量上限
   pe_percentile_max: 0.20       # PE近5年分位上限（最低20%区间）
+  commodity_cycle_check: true     # 商品周期检测：对有色/钢铁/煤炭/石油公司检测商品价格分位
 
   # 分批建仓
   batch_entry:
