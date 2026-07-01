@@ -106,8 +106,11 @@ class VirtualAccount:
             "equity_snapshots": self.state.equity_snapshots,
             "created_at": self.state.created_at,
         }
-        with open(ACCOUNT_FILE, "w", encoding="utf-8") as f:
+        # 原子写入：先写临时文件再 rename
+        tmp = ACCOUNT_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, ACCOUNT_FILE)
         self._save_trades_csv()
 
     def _save_trades_csv(self):
@@ -188,7 +191,7 @@ class VirtualAccount:
 
         pnl = (price - pos.avg_cost) * quantity
         pos.quantity -= quantity
-        if pos.quantity == 0:
+        if pos.quantity <= 0:
             del self.state.positions[code]
 
         trade = Trade(

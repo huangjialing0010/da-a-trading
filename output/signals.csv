@@ -1,2 +1,2 @@
 time,type,code,name,strategy,action,reason,price,quantity,urgency
-2026-07-01T15:55:23.917849,SELL,002558,巨人网络,deep_value,PE分位止盈：卖出 1200股,价格近5年85%分位，触发50%阈值,27.56,1200,normal
+2026-07-01T16:41:09.487225,SELL,002558,巨人网络,deep_value,PE分位止盈：卖出 1200股,价格近5年85%分位，触发50%阈值,27.56,1200,urgent

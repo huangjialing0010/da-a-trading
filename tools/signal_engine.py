@@ -92,7 +92,7 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                     type="SELL", code=code, name=pos.name, strategy=pos.strategy,
                     action=f"时间止损：卖出 {cut_qty}股",
                     reason=f"持仓{held_days}天无利润，砍{stops['time_stop_cut_ratio']:.0%}仓位",
-                    price=current_price, quantity=cut_qty, urgency="normal",
+                    price=current_price, quantity=cut_qty, urgency="urgent",
                 ))
 
         # --- 移动止盈 ---
@@ -107,6 +107,7 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                     reason=f"从高点{recent_high:.2f}回撤{drawdown_from_high:.1%}，触发止盈",
                     price=current_price, quantity=pos.quantity, urgency="urgent",
                 ))
+                continue
 
         # --- PE分位止盈（5年价格分位近似）---
         if pnl_pct > 0 and "pe_percentile_start_sell" in tp:
@@ -119,7 +120,7 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                         type="SELL", code=code, name=pos.name, strategy=pos.strategy,
                         action=f"PE分位止盈：卖出 {sell_qty}股",
                         reason=f"价格近5年{price_pct:.0%}分位，触发{tp['pe_percentile_start_sell']:.0%}阈值",
-                        price=current_price, quantity=sell_qty, urgency="normal",
+                        price=current_price, quantity=sell_qty, urgency="urgent",
                     ))
 
         # --- 基本面恶化 ---
@@ -137,6 +138,7 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                         reason=f"营收同比{revenue_growth:.1%}，触及{stops['fundamental_stop_revenue']:.0%}",
                         price=current_price, quantity=pos.quantity, urgency="urgent",
                     ))
+                    continue
                 elif profit_growth is not None and profit_growth <= stops["fundamental_stop_profit"]:
                     signals.append(Signal(
                         type="SELL", code=code, name=pos.name, strategy=pos.strategy,
@@ -144,6 +146,7 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                         reason=f"利润同比{profit_growth:.1%}，触及{stops['fundamental_stop_profit']:.0%}",
                         price=current_price, quantity=pos.quantity, urgency="urgent",
                     ))
+                    continue
 
         # --- 最长持有期 ---
         if held_days > hold_max_days:
@@ -153,6 +156,7 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                 reason=f"持仓{held_days}天，超过最长持有期{hold_max_days}天",
                 price=current_price, quantity=pos.quantity, urgency="urgent",
             ))
+            continue  # 触发完整清仓后跳过其余检查
 
     return signals
 

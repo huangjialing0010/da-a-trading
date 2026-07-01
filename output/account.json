@@ -1,5 +1,5 @@
 {
-  "cash": 588195.0,
+  "cash": 621267.0,
   "positions": {
     "000975": {
       "code": "000975",
@@ -20,7 +20,7 @@
     "002558": {
       "code": "002558",
       "name": "巨人网络",
-      "quantity": 3800,
+      "quantity": 2600,
       "avg_cost": 27.23,
       "current_price": 27.56,
       "strategy": "deep_value"
@@ -76,6 +76,16 @@
       "quantity": 3800,
       "reason": "首批建仓: 距高点-49%, ROE 6.8%, CFO/EPS 1.23, 利润+211%, 负债19.9%",
       "pnl": 0.0
+    },
+    {
+      "time": "2026-07-01T16:41:09.495748",
+      "code": "002558",
+      "name": "巨人网络",
+      "direction": "SELL",
+      "price": 27.56,
+      "quantity": 1200,
+      "reason": "价格近5年85%分位，触发50%阈值",
+      "pnl": 395.99999999999795
     }
   ],
   "equity_snapshots": [
@@ -103,8 +113,8 @@
     {
       "date": "2026-07-01",
       "total_value": 984547.0,
-      "cash": 588195.0,
-      "market_value": 396352.0,
+      "cash": 621267.0,
+      "market_value": 363280.0,
       "position_count": 3
     }
   ],

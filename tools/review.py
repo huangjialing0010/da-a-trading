@@ -53,7 +53,7 @@ def weekly_review(acc: VirtualAccount = None) -> str:
     lines.append("## 一、账户概览")
     lines.append("")
     total = acc.state.total_value
-    initial = 1_000_000
+    initial = load_config().get("account", {}).get("initial_cash", 1_000_000)
     total_return = total / initial - 1
 
     # 从 snapshots 计算本周收益
@@ -205,7 +205,8 @@ def monthly_review(acc: VirtualAccount = None) -> str:
 
     # 一、绩效总览
     total = acc.state.total_value
-    total_return = total / 1_000_000 - 1
+    initial = load_config().get("account", {}).get("initial_cash", 1_000_000)
+    total_return = total / initial - 1
 
     # 计算月收益和最大回撤
     snaps = acc.state.equity_snapshots

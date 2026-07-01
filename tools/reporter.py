@@ -138,9 +138,9 @@ def weekly_report(account: VirtualAccount) -> str:
     lines.append("")
     lines.append("【本周操作】")
     today = date.today()
-    week_ago = today.isoformat()
+    week_start = (today - timedelta(days=today.weekday())).isoformat()
     recent_trades = [t for t in account.state.trades
-                     if t.time[:10] >= week_ago and t.time[:10] <= today.isoformat()]
+                     if t.time[:10] >= week_start and t.time[:10] <= today.isoformat()]
     if recent_trades:
         for t in recent_trades:
             lines.append(f"  {t.time[:10]} {t.direction} {t.name}({t.code}) "

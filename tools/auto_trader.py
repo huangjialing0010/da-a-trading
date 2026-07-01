@@ -9,6 +9,7 @@
 
 import sys
 import io
+import os
 import json
 import socket
 import yaml
@@ -34,8 +35,11 @@ def _load_batch_state() -> dict:
 
 
 def _save_batch_state(state: dict):
-    with open(BATCH_STATE_FILE, "w", encoding="utf-8") as f:
+    """原子写入：先写临时文件再 rename，崩溃不损坏原文件"""
+    tmp = str(BATCH_STATE_FILE) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, BATCH_STATE_FILE)
 
 
 def _load_panic_state() -> dict:
@@ -46,8 +50,11 @@ def _load_panic_state() -> dict:
 
 
 def _save_panic_state(state: dict):
-    with open(PANIC_STATE_FILE, "w", encoding="utf-8") as f:
+    """原子写入"""
+    tmp = str(PANIC_STATE_FILE) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, PANIC_STATE_FILE)
 
 
 def _generate_batch_plan(code: str, name: str, first_price: float, first_qty: int) -> dict:
@@ -113,6 +120,8 @@ def daily_update() -> str:
         chg = (new_price / old_price - 1) if old_price > 0 else 0
         lines.append(f"[{pos.name}] {old_price:.2f} -> {new_price:.2f} ({chg:+.2%}) | {latest_date}")
 
+    acc._save()  # 价格更新立即持久化
+
     # 2. 止损/止盈检查（考虑分批计划）
     # 先获取 check_monitor 的非止损信号（基本面/时间止损/止盈保留）
     signals = check_monitor(acc)
@@ -153,6 +162,13 @@ def daily_update() -> str:
         if trigger is None:
             continue
 
+        # 批次间冷却期：至少隔5个自然日，防止V型反弹时三批瞬间买完
+        last_date = cfg.get("last_batch_date", "")
+        if last_date:
+            days_since = (today - date.fromisoformat(last_date)).days
+            if days_since < 5:
+                continue
+
         if isinstance(trigger, float):
             # 价格触发：跌到目标价
             kline = fetch_daily_kline(code, ttl_days=0)
@@ -166,6 +182,8 @@ def daily_update() -> str:
                                   f"第{batch_num+1}批加仓: 跌至目标价{trigger:.2f}")
                 lines.append(f"  加仓: {msg}")
                 cfg["batch"] = batch_num + 1
+                cfg["last_batch_date"] = today.isoformat()
+                _save_batch_state(batch_state)  # 立即存盘，防止崩溃丢进度
 
         elif trigger == "stable":
             # 企稳触发：站上20日均线 + 成交量放大
@@ -192,6 +210,8 @@ def daily_update() -> str:
                                   f"第{batch_num+1}批加仓: 企稳确认 (站上MA20, 60日线走平, 放量)")
                 lines.append(f"  加仓: {msg}")
                 cfg["batch"] = batch_num + 1
+                cfg["last_batch_date"] = today.isoformat()
+                _save_batch_state(batch_state)  # 立即存盘
 
     # 3.5 恐慌策略
     wl = fetch_market_water_level()
@@ -208,6 +228,7 @@ def daily_update() -> str:
                 panic_state["batch"] = 0
                 panic_state["entries"] = []
                 lines.append("[恐慌] 全部批次已完成，退出恐慌模式")
+                _save_panic_state(panic_state)
                 break
 
     # 恐慌触发
@@ -218,6 +239,12 @@ def daily_update() -> str:
         per_etf_cash = per_batch_cash / len(etfs)
         entries = []
         for etf_code in etfs:
+            # 检查是否已持有该ETF（手动买入或其他策略），避免混合成本
+            existing = acc.get_position(etf_code)
+            if existing and existing.quantity > 0:
+                lines.append(f"  [恐慌] {etf_names.get(etf_code, etf_code)} 已持仓，跳过恐慌买入")
+                continue
+
             kline = fetch_daily_kline(etf_code, ttl_days=0)
             if kline.empty:
                 continue
@@ -232,6 +259,7 @@ def daily_update() -> str:
                               "first_price": price, "per_batch_qty": qty})
         if entries:
             panic_state = {"active": True, "batch": 1, "entries": entries}
+            _save_panic_state(panic_state)
 
     # 恐慌加仓
     elif panic_state["active"] and panic_state["batch"] < panic_cfg["batches"]:
@@ -249,6 +277,7 @@ def daily_update() -> str:
                                   f"恐慌第{panic_state['batch']+1}批: 跌{target_drop:.0%}至{target_price:.2f}")
                 lines.append(f"  [恐慌加仓] {msg}")
                 panic_state["batch"] += 1
+                _save_panic_state(panic_state)
                 break
 
     # 恐慌退出
@@ -262,8 +291,7 @@ def daily_update() -> str:
                                    f"恐慌退出: ERP回落至{erp:.2%}")
                 lines.append(f"  [恐慌卖出] {msg}")
         panic_state = {"active": False, "batch": 0, "entries": []}
-
-    _save_panic_state(panic_state)
+        _save_panic_state(panic_state)
 
     # 4. 记录净值
     acc.record_snapshot()
@@ -284,18 +312,25 @@ def daily_update() -> str:
     # 5. 保存持仓快照到 CSV
     _save_holdings_snapshot(acc)
 
-    # 6. 周报/月报
-    if today.weekday() == 4:  # 周五
-        from .review import weekly_review
-        weekly_review(acc)
-        lines.append(f"\n[周报] weekly_{today.strftime('%Y%m%d')}.md")
-    if today.day == 1:  # 每月1号
-        from .review import monthly_review
-        monthly_review(acc)
-        lines.append(f"[月报] monthly_{today.strftime('%Y%m')}.md")
-
-    # 7. 持久化分批状态
+    # 6. 持久化（周报/月报之前先存盘，防止review崩溃丢进度）
     _save_batch_state(batch_state)
+    _save_panic_state(panic_state)
+
+    # 7. 周报/月报（非关键路径，崩了不影响主流程）
+    if today.weekday() == 4:  # 周五
+        try:
+            from .review import weekly_review
+            weekly_review(acc)
+            lines.append(f"\n[周报] weekly_{today.strftime('%Y%m%d')}.md")
+        except Exception as e:
+            lines.append(f"\n[周报] 生成失败: {e}")
+    if today.day == 1:  # 每月1号
+        try:
+            from .review import monthly_review
+            monthly_review(acc)
+            lines.append(f"[月报] monthly_{today.strftime('%Y%m')}.md")
+        except Exception as e:
+            lines.append(f"[月报] 生成失败: {e}")
 
     # 8. 每日刷新候选池（周五全量财务验证，其余快速模式）
     try:
