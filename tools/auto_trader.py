@@ -10,6 +10,7 @@
 import sys
 import io
 import json
+import socket
 import yaml
 from datetime import date, timedelta, datetime
 from pathlib import Path
@@ -68,6 +69,7 @@ def _load_config():
 
 
 def daily_update() -> str:
+    socket.setdefaulttimeout(30)  # 所有网络调用30秒超时, 防止akshare API卡死
     lines = []
     acc = VirtualAccount()
     today = date.today()

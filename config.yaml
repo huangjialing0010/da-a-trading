@@ -169,6 +169,19 @@ industry_filter:
     - 600695  # *ST绿庭
     - 600816  # 建元信托
 
+# === 行业分析（申万一级行业量化评分） ===
+industry_analysis:
+  enabled: true                      # 启用数据驱动行业评分
+  # 健康分权重（0-100，越高越有吸引力）
+  score_weights:
+    pe_percentile: 0.50              # PE估值分位（越低分越高）
+    recent_performance: 0.30         # 近期涨跌（跌多分高，均值回归逻辑）
+    price_percentile: 0.20           # 价格历史分位（越低分越高）
+  decline_threshold: 25              # 健康分<25 自动标记为衰退
+  support_threshold: 70              # 健康分>70 自动标记为支撑
+  pe_lookback_years: 5               # PE估值历史回看年数
+  classification_ttl_days: 30        # 股票→行业映射缓存天数
+
 # === 数据缓存 ===
 cache:
   kline_ttl_days: 1             # 日K线缓存有效期（天）

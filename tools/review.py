@@ -12,6 +12,7 @@ import yaml
 from .account import VirtualAccount
 from .data_fetcher import fetch_market_water_level
 from .screener import load_candidates
+from .industry_analyzer import get_all_industry_scores, get_industry_distribution
 
 BASE_DIR = Path(__file__).parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
@@ -110,6 +111,15 @@ def weekly_review(acc: VirtualAccount = None) -> str:
         lines.append(f"深度价值候选 {len(dv)} 只：")
         for c in dv[:5]:
             lines.append(f"- {c.code} {c.name} — 评分 {c.score:.0f} — {c.reason[:50]}")
+        # 行业分布
+        try:
+            dv_codes = [c.code for c in dv]
+            dist = get_industry_distribution(dv_codes)
+            if dist:
+                lines.append(f"")
+                lines.append(f"行业分布: " + " | ".join(f"{k}({v})" for k, v in list(dist.items())[:8]))
+        except Exception:
+            pass
     else:
         lines.append("无候选")
     lines.append("")
@@ -128,8 +138,34 @@ def weekly_review(acc: VirtualAccount = None) -> str:
         lines.append(f"- 两融余额: {wl['margin_balance']/1e12:.2f}万亿")
     lines.append("")
 
-    # 六、下周关注
-    lines.append("## 六、下周关注")
+    # 六、行业健康度排名
+    lines.append("## 六、行业健康度排名（申万一级）")
+    lines.append("")
+    try:
+        scores = get_all_industry_scores()
+        if scores:
+            lines.append(f"| 排名 | 行业 | 健康分 | PE(静) | PB | 20日涨跌 | PE分位 |")
+            lines.append(f"|------|------|--------|--------|-----|----------|--------|")
+            for i, s in enumerate(scores):
+                flag = "++" if s["score"] >= 70 else "--" if s["score"] < 25 else ""
+                pe = f"{s['pe_static']:.1f}" if s.get("pe_static") else "-"
+                pb = f"{s['pb']:.2f}" if s.get("pb") else "-"
+                perf = f"{s['perf_20d']:+.1%}" if s.get("perf_20d") is not None else "-"
+                pe_pct = f"{s['pe_pct']:.0%}" if s.get("pe_pct") is not None else "-"
+                lines.append(f"| {i+1} | {s['level1_name']}{flag} | {s['score']:.0f} | {pe} | {pb} | {perf} | {pe_pct} |")
+
+            # 标注最高分和最低分行业
+            top3 = [s["level1_name"] for s in scores[:3]]
+            bottom3 = [s["level1_name"] for s in scores[-3:]]
+            lines.append("")
+            lines.append(f"> 最具吸引力: {', '.join(top3)}")
+            lines.append(f"> 最需回避: {', '.join(bottom3)}")
+    except Exception as e:
+        lines.append(f"（行业数据获取失败: {e}）")
+    lines.append("")
+
+    # 七、下周关注
+    lines.append("## 七、下周关注")
     lines.append("")
     lines.append("- 持仓止损/加仓触发点监控")
     lines.append("- 候选池更新（运行 screener）")

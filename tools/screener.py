@@ -17,7 +17,7 @@ from .data_fetcher import (
     fetch_financial_indicators, fetch_financial_summary,
     fetch_stock_universe, fetch_stock_quick_snapshot,
 )
-from .industry_analyzer import classify_stock, get_sector_score, is_enabled
+from .industry_analyzer import classify_stock, get_sector_score, is_enabled, get_industry_distribution
 
 BASE_DIR = Path(__file__).parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
@@ -457,6 +457,20 @@ def run_full_screening(n: int = 30, quick: bool = False) -> dict:
 
     filename = "candidates_quick.csv" if quick else "candidates.csv"
     _save_candidates(results, filename)
+
+    # 行业分布
+    dv_codes = [c.code for c in results["deep_value"]]
+    if dv_codes:
+        try:
+            dist = get_industry_distribution(dv_codes)
+            if dist:
+                print(f"\n[screener] 候选池行业分布 (申万一级):")
+                for ind, count in list(dist.items())[:10]:
+                    bar = "#" * count
+                    print(f"  {ind}: {count}只 {bar}")
+        except Exception:
+            pass  # 行业分布不是关键路径
+
     return results
 
 

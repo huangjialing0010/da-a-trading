@@ -15,6 +15,9 @@
 
 import sys
 import os
+import socket
+
+socket.setdefaulttimeout(30)  # 所有网络调用30秒超时，防止akshare卡死
 
 # 确保 UTF-8 输出
 if sys.stdout.encoding != "utf-8":
