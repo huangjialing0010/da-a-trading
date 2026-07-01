@@ -22,15 +22,26 @@ def _cache_valid(filepath: str, ttl_days: int) -> bool:
     return (datetime.now() - mtime).days < ttl_days
 
 
-# 关键词 → 商品期货（优先级顺序，先匹配到的生效）
+# 关键词 → 商品期货（按优先级匹配，命中即止）
+# False-positives通过 _KEYWORD_BLACKLIST 排除
 # type: industrial(硬周期/扣15分) | energy(能源/扣10分) | precious(贵金属/不扣分)
 COMMODITY_MAP = {
     "铝": {"symbol": "AL0", "type": "industrial", "name": "沪铝"},
     "铜": {"symbol": "CU0", "type": "industrial", "name": "沪铜"},
+    "钼": {"symbol": None, "type": "industrial", "name": "钼（无期货）"},
     "钢": {"symbol": "RB0", "type": "industrial", "name": "螺纹钢"},
     "金": {"symbol": "AU0", "type": "precious", "name": "沪金"},
     "煤": {"symbol": "ZC0", "type": "energy", "name": "动力煤"},
-    "油": {"symbol": "SC0", "type": "energy", "name": "原油"},
+    "石化": {"symbol": "SC0", "type": "energy", "name": "原油"},
+    "石油": {"symbol": "SC0", "type": "energy", "name": "原油"},
+    "油服": {"symbol": "SC0", "type": "energy", "name": "原油"},
+    "神华": {"symbol": "ZC0", "type": "energy", "name": "动力煤"},
+}
+
+# 名称含"金"但不是黄金股的公司（避免标记金风科技、金龙鱼等）
+_KEYWORD_BLACKLIST = {
+    "金": {"金风科技", "金龙鱼", "中金公司", "金山办公", "金地集团",
+           "金螳螂", "金隅集团", "金发科技", "金域医学", "金诚信"},
 }
 
 # 分位阈值
@@ -48,9 +59,15 @@ PENALTIES = {
 
 
 def _match_commodity(name: str) -> dict | None:
-    """根据股票名称匹配商品，按优先级返回第一个匹配"""
+    """根据股票名称匹配商品，按优先级返回第一个匹配。
+
+    对"金"等宽泛关键词做黑名单排除，避免非周期股误匹配。
+    """
     for keyword, info in COMMODITY_MAP.items():
         if keyword in name:
+            blacklist = _KEYWORD_BLACKLIST.get(keyword, set())
+            if name in blacklist:
+                continue
             return info
     return None
 
@@ -117,6 +134,10 @@ def check_commodity_cycle(name: str) -> dict | None:
     """
     info = _match_commodity(name)
     if not info:
+        return None
+
+    # 无期货合约的商品（如钼），无法计算分位，跳过
+    if not info["symbol"]:
         return None
 
     data = fetch_commodity_percentile(info["symbol"])
