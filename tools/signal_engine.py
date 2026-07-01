@@ -110,7 +110,8 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                 continue
 
         # --- PE分位止盈（5年价格分位近似）---
-        if pnl_pct > 0 and "pe_percentile_start_sell" in tp:
+        min_profit = tp.get("pe_percentile_min_profit", 0.10)
+        if pnl_pct >= min_profit and "pe_percentile_start_sell" in tp:
             price_pct = fetch_price_percentile(code, years=5)
             if price_pct is not None and price_pct >= tp["pe_percentile_start_sell"]:
                 ratio = tp.get("batch_sell_ratio", 0.33)
