@@ -72,8 +72,9 @@ def _match_commodity(name: str) -> dict | None:
     return None
 
 
-def fetch_commodity_percentile(symbol: str, ttl_days: int = 1) -> dict | None:
-    """获取商品期货当前价格在5年历史中的分位。缓存1天。"""
+def fetch_commodity_percentile(symbol: str, lookback_years: int = 3,
+                               ttl_days: int = 1) -> dict | None:
+    """获取商品期货当前价格在N年历史中的分位。默认3年(避免2020疫情崩盘虚高)。"""
     cache_file = str(CACHE_DIR / f"commodity_{symbol}.json")
     if _cache_valid(cache_file, ttl_days):
         with open(cache_file, "r", encoding="utf-8") as f:
@@ -90,7 +91,8 @@ def fetch_commodity_percentile(symbol: str, ttl_days: int = 1) -> dict | None:
             return None
 
         current = float(close.iloc[-1])
-        recent = close.tail(min(len(close), 1250))  # ~5年
+        n_days = lookback_years * 250
+        recent = close.tail(min(len(close), n_days))
         low = float(recent.min())
         high = float(recent.max())
         pct = (current - low) / (high - low) if high > low else 0.5

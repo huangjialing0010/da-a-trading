@@ -144,6 +144,20 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
             ))
             continue  # 触发完整清仓后跳过其余检查
 
+        # --- 商品周期监测（仅告警，不自动卖出）---
+        try:
+            from .commodity_fetcher import check_commodity_cycle
+            cycle = check_commodity_cycle(pos.name)
+            if cycle and cycle.get("pct", 0) > 0.80:
+                signals.append(Signal(
+                    type="ALERT", code=code, name=pos.name, strategy=pos.strategy,
+                    action=f"注意商品周期风险",
+                    reason=f"[{cycle['commodity']}]处{cycle['pct']:.0%}分位，{cycle.get('type','')}类商品高位",
+                    price=current_price, quantity=0, urgency="normal",
+                ))
+        except Exception:
+            pass
+
     return signals
 
 
