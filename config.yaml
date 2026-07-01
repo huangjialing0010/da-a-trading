@@ -55,8 +55,8 @@ stops:
 
 # === 止盈规则 ===
 take_profit:
-  trail_trigger: 0.20           # 涨20%后启动移动止盈
-  trail_drawdown: 0.08          # 最高点回撤8%离场
+  trail_trigger: 0.25           # 涨25%后启动移动止盈（回测最优15/25/30%，选25%）
+  trail_drawdown: 0.12          # 最高点回撤12%离场（回测最优12-15%，8%太紧频繁甩下车）
 
 # === 行业过滤（选股前自动筛选行业逻辑） ===
 industry_filter:

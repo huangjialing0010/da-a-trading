@@ -98,7 +98,7 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
         # --- 移动止盈 ---
         if pnl_pct >= tp["trail_trigger"]:
             # 检查最高点回撤
-            recent_high = float(kline["收盘"].tail(60).max())
+            recent_high = float(kline["收盘"].tail(20).max())
             drawdown_from_high = (recent_high - current_price) / recent_high
             if drawdown_from_high >= tp["trail_drawdown"]:
                 signals.append(Signal(

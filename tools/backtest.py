@@ -350,7 +350,7 @@ class BacktestEngine:
             if pnl >= self.tp["trail_trigger"] and code in self._klines:
                 kline = self._klines[code]
                 kline.index = pd.to_datetime(kline.index)
-                recent = kline[kline.index <= date_str]["收盘"].tail(60)
+                recent = kline[kline.index <= date_str]["收盘"].tail(20)
                 if len(recent) > 0:
                     recent_high = float(recent.max())
                     dd = (recent_high - price) / recent_high
