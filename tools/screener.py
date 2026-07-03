@@ -33,6 +33,7 @@ class Candidate:
     reason: str = ""
     metrics: dict = field(default_factory=dict)
     checked_at: str = field(default_factory=lambda: date.today().isoformat())
+    cycle_warning: str = ""  # 商品周期警示（非空时有周期风险）
 
 
 def load_config() -> dict:
@@ -99,12 +100,14 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
                 flags.append(f"行业逻辑支撑 +{sector_bonus}分")
 
             # 商品周期检测
+            cycle_warning = ""
             if dv.get("commodity_cycle_check", True):
                 try:
                     from .commodity_fetcher import check_commodity_cycle
                     cycle = check_commodity_cycle(name)
                     if cycle:
                         flags.append(cycle["warning"])
+                        cycle_warning = cycle["warning"]
                         if cycle["penalty"] > 0:
                             score -= cycle["penalty"]
                 except Exception:
@@ -114,6 +117,7 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
             passed.append({
                 "code": code, "name": name,
                 "score": score, "flags": flags, "metrics": metrics,
+                "cycle_warning": cycle_warning,
             })
 
         # 控制速度，避免被封IP
@@ -137,6 +141,7 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
                 score=p["score"],
                 reason="；".join(p["flags"]),
                 metrics=p["metrics"],
+                cycle_warning=p.get("cycle_warning", ""),
             ))
         return candidates
 
@@ -163,6 +168,7 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
                 score=score,
                 reason="；".join(flags),
                 metrics=metrics,
+                cycle_warning=p.get("cycle_warning", ""),
             ))
 
         time.sleep(0.3)
@@ -496,6 +502,7 @@ def _save_candidates(results: dict, filename: str = "candidates.csv"):
                 "code": c.code, "name": c.name,
                 "strategy": strategy, "score": round(c.score, 1),
                 "reason": c.reason, "checked_at": c.checked_at,
+                "cycle_warning": c.cycle_warning,
             }
             for k, v in c.metrics.items():
                 row[f"m_{k}"] = v
@@ -525,6 +532,7 @@ def load_candidates() -> dict:
             score=float(row["score"]),
             reason=str(row.get("reason", "")),
             checked_at=str(row.get("checked_at", "")),
+            cycle_warning=str(row.get("cycle_warning", "")),
         )
         if c.strategy in results:
             results[c.strategy].append(c)
