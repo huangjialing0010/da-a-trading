@@ -6,6 +6,9 @@ on:
     - cron: "30 9 * * 1-5"
   workflow_dispatch:  # 允许手动触发
 
+permissions:
+  contents: write  # 允许 git push 回仓库
+
 jobs:
   daily-update:
     runs-on: ubuntu-latest
