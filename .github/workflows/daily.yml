@@ -34,7 +34,8 @@ jobs:
       - name: Run daily update
         env:
           PYTHONUNBUFFERED: 1
-        run: python -c "
+        run: |
+          python -c "
           import socket
           socket.setdefaulttimeout(15)
           from tools.auto_trader import daily_update
