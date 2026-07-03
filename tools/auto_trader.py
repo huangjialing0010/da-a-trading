@@ -77,18 +77,18 @@ def _load_config():
 
 
 def _check_industry_limit(code: str, acc: VirtualAccount) -> tuple[bool, str]:
-    """检查同行业持仓是否已达上限（最多2只）。返回 (通过?, 原因)"""
+    """检查同行业持仓是否已达上限（最多2只，按申万二级分类）。返回 (通过?, 原因)"""
     info = get_stock_industry(code)
     if not info:
         return True, ""  # 无法识别行业，放行
-    level1_name = info["level1_name"]
+    level2_name = info["level2_name"]
     same_industry = 0
     for pos in acc.get_holdings():
         pi = get_stock_industry(pos.code)
-        if pi and pi["level1_name"] == level1_name:
+        if pi and pi["level2_name"] == level2_name:
             same_industry += 1
     if same_industry >= 2:
-        return False, f"[{level1_name}]已有{same_industry}只持仓，达到上限"
+        return False, f"[{level2_name}]已有{same_industry}只持仓，达到上限"
     return True, ""
 
 

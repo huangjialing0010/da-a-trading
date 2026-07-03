@@ -119,39 +119,67 @@ def fetch_level1_history(code: str, start_date: str = "20200101",
 
 # === 股票→行业映射 ===
 
-def _build_industry_code_map() -> dict:
-    """构建 industry_code前2位 → 申万一级行业名称 的映射"""
+def _build_industry_tree() -> tuple[dict, dict]:
+    """构建申万行业代码→名称映射。
+
+    Returns:
+        (l1_map, l2_map)
+        l1_map: {"11": "农林牧渔", ...}  (2位代码→一级名称)
+        l2_map: {"1101": {"name": "种植业", "level1_name": "农林牧渔", "level1_code": "11"}, ...}
+    """
     try:
         tree = ak.stock_industry_category_cninfo(symbol="申银万国行业分类标准")
         if tree is None or tree.empty:
-            return {}
+            return {}, {}
     except Exception:
-        return {}
+        return {}, {}
 
-    level1 = tree[tree.iloc[:, -1] == 1]
-    code_map = {}
-    for _, row in level1.iterrows():
-        vals = list(row)
-        tree_code = str(vals[0])
-        name = str(vals[1])
-        if tree_code.startswith("S") and len(tree_code) >= 3:
-            code_map[tree_code[1:3]] = name
-    return code_map
+    level_col = tree.columns[-1]
+    code_col = tree.columns[0]
+    name_col = tree.columns[1]
+
+    # Level 1: S + 2 digits
+    l1 = tree[tree[level_col] == 1]
+    l1_map = {}
+    for _, row in l1.iterrows():
+        tc = str(row[code_col])
+        if tc.startswith("S") and len(tc) >= 3:
+            l1_map[tc[1:3]] = str(row[name_col])
+
+    # Level 2: S + 4 digits
+    l2 = tree[tree[level_col] == 2]
+    l2_map = {}
+    for _, row in l2.iterrows():
+        tc = str(row[code_col])
+        name = str(row[name_col])
+        if tc.startswith("S") and len(tc) >= 5:
+            l2_code = tc[1:5]  # 4 digits after S
+            l1_code = tc[1:3]  # parent level 1
+            l2_map[l2_code] = {
+                "name": name,
+                "level1_name": l1_map.get(l1_code, ""),
+                "level1_code": l1_code,
+            }
+
+    return l1_map, l2_map
 
 
 def fetch_stock_industry_map(ttl_days: int = 30) -> dict:
-    """获取 股票代码 → 申万一级行业名称 的映射。缓存30天。
+    """获取 股票代码 → 行业信息 的映射。缓存30天。
+
+    Returns:
+        {code: {"level1_name": "...", "level2_name": "...", "level2_code": "..."}}
 
     数据源: stock_industry_clf_hist_sw (申万研究所官方Excel)
     每只股票取最新一条分类记录。
     swsresearch.com 的 SSL 证书过期，临时绕过验证（仅此函数）。
     """
-    cache_file = _cache_path(MARKET_DIR, "stock_industry_map", ".json")
+    cache_file = _cache_path(MARKET_DIR, "stock_industry_map_v2", ".json")
     if _cache_valid(cache_file, ttl_days):
         with open(cache_file, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    code_name_map = _build_industry_code_map()
+    l1_map, l2_map = _build_industry_tree()
 
     with _insecure_ssl():
         try:
@@ -172,9 +200,26 @@ def fetch_stock_industry_map(ttl_days: int = 30) -> dict:
     for _, row in df.iterrows():
         code = str(row["symbol"]).zfill(6)
         industry_code = str(row["industry_code"])
-        level1_name = code_name_map.get(industry_code[:2])
-        if level1_name:
-            result[code] = level1_name
+
+        # industry_code 前4位 = 申万二级代码
+        l2_code = industry_code[:4] if len(industry_code) >= 4 else industry_code
+
+        l2_info = l2_map.get(l2_code)
+        if l2_info:
+            result[code] = {
+                "level1_name": l2_info["level1_name"],
+                "level2_name": l2_info["name"],
+                "level2_code": l2_code,
+            }
+        else:
+            # 回退到一级（二级映射失败时）
+            fallback_l1 = l1_map.get(industry_code[:2], "")
+            if fallback_l1:
+                result[code] = {
+                    "level1_name": fallback_l1,
+                    "level2_name": fallback_l1,  # 用一级名当二级名
+                    "level2_code": industry_code[:2],
+                }
 
     with open(cache_file, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False)

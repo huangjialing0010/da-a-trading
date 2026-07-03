@@ -482,7 +482,7 @@ def run_full_screening(n: int = 30, quick: bool = False) -> dict:
         try:
             dist = get_industry_distribution(dv_codes)
             if dist:
-                print(f"\n[screener] 候选池行业分布 (申万一级):")
+                print(f"\n[screener] 候选池行业分布 (申万二级):")
                 for ind, count in list(dist.items())[:10]:
                     bar = "#" * count
                     print(f"  {ind}: {count}只 {bar}")

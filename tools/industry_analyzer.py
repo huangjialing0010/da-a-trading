@@ -123,12 +123,14 @@ def _load_level1_industries() -> pd.DataFrame:
 
 
 def get_stock_industry(code: str) -> dict | None:
-    """返回某只股票的申万一级行业信息，无数据返回None"""
+    """返回某只股票的行业信息（含二级分类），无数据返回None"""
     stock_map = _load_stock_industry_map()
-    level1_name = stock_map.get(str(code).zfill(6))
-    if not level1_name:
+    info = stock_map.get(str(code).zfill(6))
+    if not info:
         return None
 
+    level1_name = info["level1_name"]
+    level2_name = info["level2_name"]
     idx_code = LEVEL1_INDEX_CODES.get(level1_name)
 
     df = _load_level1_industries()
@@ -146,6 +148,8 @@ def get_stock_industry(code: str) -> dict | None:
 
     return {
         "level1_name": level1_name,
+        "level2_name": level2_name,
+        "level2_code": info.get("level2_code", ""),
         "level1_code": idx_code,
         "pe_static": pe_static,
         "pe_ttm": pe_ttm,
@@ -290,28 +294,30 @@ def get_all_industry_scores() -> list[dict]:
 
 
 def get_industry_distribution(codes: list[str]) -> dict:
-    """给定股票代码列表，返回申万一级行业分布"""
+    """给定股票代码列表，返回申万二级行业分布。按二级去重计数。"""
     stock_map = _load_stock_industry_map()
     dist = {}
     for code in codes:
-        name = stock_map.get(str(code).zfill(6))
-        if name:
+        info = stock_map.get(str(code).zfill(6))
+        if info:
+            name = info["level2_name"]
             dist[name] = dist.get(name, 0) + 1
     return dict(sorted(dist.items(), key=lambda x: x[1], reverse=True))
 
 
 def _data_driven_classify(code: str, name: str = "") -> str:
-    """数据驱动行业分类，仅在手工规则返回neutral后调用"""
+    """数据驱动行业分类（使用申万一级健康分），仅在手工规则返回neutral后调用"""
     cfg = _get_ia_cfg()
     if not cfg.get("enabled", True):
         return "neutral"
 
     stock_map = _load_stock_industry_map()
-    level1_name = stock_map.get(str(code).zfill(6))
-    if not level1_name:
+    info = stock_map.get(str(code).zfill(6))
+    if not info:
         return "neutral"
+    level1_name = info["level1_name"]
 
-    # 获取全行业排名，找当前行业的分
+    # 获取全行业排名（一级），找当前行业的分
     scores = get_all_industry_scores()
     current_score = None
     for s in scores:
@@ -360,11 +366,11 @@ def get_sector_score(code: str, name: str = "") -> int:
         manual_result = _manual_classify(code, name)
         if manual_result == "support":
             return 5  # 手工关键词匹配，固定+5
-        # 数据驱动support，按健康分加成
+        # 数据驱动support，按健康分加成（基于一级行业）
         stock_map = _load_stock_industry_map()
-        level1_name = stock_map.get(str(code).zfill(6))
-        if level1_name:
-            health = get_industry_health(level1_name)
+        info = stock_map.get(str(code).zfill(6))
+        if info:
+            health = get_industry_health(info["level1_name"])
             bonus = max(3, min(8, int(health["score"] / 20)))
             return bonus
         return 3
