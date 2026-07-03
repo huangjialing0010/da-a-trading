@@ -9,7 +9,7 @@ on:
 jobs:
   daily-update:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -32,7 +32,14 @@ jobs:
             market-data-
 
       - name: Run daily update
-        run: python -c "from tools.auto_trader import daily_update; print(daily_update())"
+        env:
+          PYTHONUNBUFFERED: 1
+        run: python -c "
+          import socket
+          socket.setdefaulttimeout(15)
+          from tools.auto_trader import daily_update
+          print(daily_update())
+          "
 
       - name: Commit and push
         run: |

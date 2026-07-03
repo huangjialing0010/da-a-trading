@@ -93,7 +93,7 @@ def _check_industry_limit(code: str, acc: VirtualAccount) -> tuple[bool, str]:
 
 
 def daily_update() -> str:
-    socket.setdefaulttimeout(30)  # 所有网络调用30秒超时, 防止akshare API卡死
+    socket.setdefaulttimeout(15)  # 所有网络调用15秒超时, 防止akshare API卡死
     lines = []
     acc = VirtualAccount()
     today = date.today()
