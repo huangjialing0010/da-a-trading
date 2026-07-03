@@ -81,11 +81,10 @@ industry_filter:
     - 稀土
     - 钨业
     - 钼业
+    # 2026-07-03移除"铜""铝"：+5支撑分抵消了商品周期扣分，让cycle_warning失效
     - 锂电
     - 储能
     - 创新药
-    - 铜
-    - 铝
   # 结构性衰退行业 — 直接黑名单股票代码（不依赖API，手动维护）
   structural_decline_codes:
     # 白酒
