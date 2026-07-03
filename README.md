@@ -22,7 +22,7 @@ python main.py screener
 python main.py monitor
 
 # 日更（刷新价格+检查止损/加仓+记录快照）
-python tools/auto_trader.py
+python -c "from tools.auto_trader import daily_update; print(daily_update())"
 
 # 回测（验证策略参数）
 python tools/backtest.py
