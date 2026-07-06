@@ -320,8 +320,9 @@ def daily_update() -> str:
         if not k.empty:
             data_date = str(k.index[-1].date())
             break
+    # 日历日>3才警告：周五→周一跨3天（周末）属正常
     days_stale = (today - datetime.strptime(data_date, "%Y-%m-%d").date()).days if data_date != "未知" else 99
-    stale_warn = " ⚠ 数据过期!" if days_stale > 2 else ""
+    stale_warn = " [警告] 数据过期!" if days_stale > 3 else ""
 
     lines.append(f"\n总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
     lines.append(f"数据日期: {data_date}（{days_stale}天前）{stale_warn}")
