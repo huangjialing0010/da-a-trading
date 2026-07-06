@@ -13,7 +13,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
   - `market/` — 市场水位数据
 - `output/` — 输出文件
   - `account.json` — 账户状态（含交易记录）
-  - `candidates.csv` — 候选池（周五全量，含财务验证）
+  - `candidates.csv` — 候选池（全量，含财务验证 + cycle_warning列）
   - `candidates_quick.csv` — 候选池快照（每日快速，仅量价，不覆盖正式）
   - `signals.csv` — 当前信号
   - `holdings.csv` — 持仓快照
@@ -29,14 +29,15 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
   - `screener.py` — 选股筛选（量价初筛 + 财务深度验证）
   - `signal_engine.py` — 信号生成（止损/止盈/买入）
   - `auto_trader.py` — 自动交易引擎（每日更新 + 信号执行）
-  - `industry_analyzer.py` — 行业分析（手工黑名单 + 申万一级量化评分，双层体系）
-  - `industry_data.py` — 申万行业分类+PE/PB数据获取
+  - `industry_analyzer.py` — 行业分析（手工黑名单 + 申万二级量化评分，双层体系）
+  - `industry_data.py` — 申万行业分类（二级131类）+PE/PB数据获取
   - `commodity_fetcher.py` — 商品期货周期检测（防止周期顶部价值陷阱）
   - `backtest.py` — 回测引擎（历史数据验证策略参数，支持参数覆盖对比）
   - `reporter.py` — 报表输出
   - `review.py` — 定期复盘（周报/月报存档到 output/reports/）
 - `main.py` — CLI入口
-- `run_daily.ps1` — 日更自动化脚本（Windows定时任务调用，17:30执行）
+- `run_daily.ps1` — 日更自动化脚本（本地备用，Windows定时任务已禁用）
+- `.github/workflows/daily.yml` — GitHub Actions 日更流水线（主用，工作日17:30自动运行）
 
 ## 策略参数（回测验证，2026-07-01）
 - 硬止损：**-20%**（回测5场景对比，-8%跑输基准13.7%，-20%跑赢24.5%）
@@ -63,5 +64,5 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 - git：`data/` 不入库；`output/` 入库存档；每次日更后提交
 - 改策略参数前先跑回测验证（`tools/backtest.py`），参数覆盖用 `config_overrides` 传参
 - 股票推荐前必须深度分析（业务驱动力、增长质量、竞争格局、管理层行为、问题可逆性），筛选器只是初筛
-- 每日 17:30 自动运行 `run_daily.ps1`（Windows 定时任务「大A日更」），输出含数据新鲜度标记
+- 日更由 GitHub Actions 自动执行（`.github/workflows/daily.yml`，工作日 17:30），本地 `run_daily.ps1` 为备用
 - ⚠️ PowerShell 5.1 读 UTF-8 无 BOM 脚本会吞中文：脚本内路径必须用 `$PSScriptRoot` 或 ASCII，python 必须写完整绝对路径（计划任务 `-NoProfile` 没有用户 PATH）
