@@ -46,17 +46,17 @@
     "batch": 1,
     "batches": [
       {
-        "qty": 3800,
+        "qty": 2600,
         "price": 27.23,
         "trigger": null
       },
       {
-        "qty": 3800,
+        "qty": 2600,
         "price": 24.51,
         "trigger": 24.51
       },
       {
-        "qty": 5000,
+        "qty": 3400,
         "price": null,
         "trigger": "stable"
       }
