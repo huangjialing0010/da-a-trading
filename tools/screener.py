@@ -16,7 +16,7 @@ import yaml
 from .data_fetcher import (
     fetch_daily_kline, fetch_market_water_level,
     fetch_financial_indicators, fetch_financial_summary,
-    fetch_stock_universe, fetch_stock_quick_snapshot,
+    fetch_stock_universe, fetch_stock_quick_snapshot, _parse_pct,
 )
 from .industry_analyzer import classify_stock, get_sector_score, is_enabled, get_industry_distribution
 
@@ -473,6 +473,104 @@ def screen_event_arb(config: dict) -> list[Candidate]:
     return candidates
 
 
+# === 趋势改善扫描（研究工具，不入自动交易） ===
+
+def scan_trend_improvement(n: int = 10) -> list[dict]:
+    """扫描同报告期利润YoY改善最多的股票。
+    取最新报告期的同月份历史数据，比较利润YoY变化幅度。
+    输出到 trend_candidates.csv，仅供人工审查，不触发自动交易。
+    """
+    import akshare as ak
+    from pathlib import Path
+
+    fin_raw_dir = BASE_DIR / "data" / "financials" / "raw"
+    fin_raw_dir.mkdir(parents=True, exist_ok=True)
+
+    config = load_config()
+    dv = config["deep_value"]
+    universe = fetch_stock_universe()
+    results = []
+
+    total = min(len(universe), dv.get("universe_top_n", 70))
+    print(f"[trend_scan] 扫描 {total} 只...")
+
+    for i, (_, row) in enumerate(universe.head(total).iterrows()):
+        code = str(row["code"]).zfill(6)
+        name = str(row["name"])
+        if "ST" in name:
+            continue
+
+        # 缓存原始财务DataFrame
+        cache_file = fin_raw_dir / f"{code}.csv"
+        df = None
+        if cache_file.exists():
+            mtime = datetime.fromtimestamp(cache_file.stat().st_mtime)
+            if (datetime.now() - mtime).days < 30:
+                try:
+                    df = pd.read_csv(str(cache_file), dtype={"报告期": str})
+                except Exception:
+                    pass
+
+        if df is None:
+            try:
+                df = ak.stock_financial_abstract_ths(symbol=code, indicator="按报告期")
+                if df is not None and not df.empty:
+                    df.to_csv(str(cache_file), index=False, encoding="utf-8")
+            except Exception:
+                continue
+
+        if df is None or df.empty:
+            continue
+
+        df["_rpt"] = df["报告期"].astype(str)
+        latest = df.iloc[-1]
+        latest_month = latest["_rpt"][5:7]
+        same_type = df[df["_rpt"].str[5:7] == latest_month]
+
+        if len(same_type) < 2:
+            continue
+
+        last_two = same_type.iloc[-2:]
+        yoys = []
+        for _, r in last_two.iterrows():
+            yoy = _parse_pct(r.get("净利润同比增长率"))
+            if yoy is not None:
+                yoys.append(yoy)
+
+        if len(yoys) < 2:
+            continue
+
+        improvement = yoys[1] - yoys[0]
+        if improvement <= 0:
+            continue
+
+        roe_raw = _parse_pct(df.iloc[-1].get("净资产收益率"))
+        debt_raw = _parse_pct(df.iloc[-1].get("资产负债率"))
+
+        results.append({
+            "code": code, "name": name,
+            "improvement": round(improvement * 100, 1),
+            "current_yoy": round(yoys[1] * 100, 1),
+            "prev_yoy": round(yoys[0] * 100, 1),
+            "roe": round(roe_raw * 100, 1) if roe_raw else None,
+            "debt_ratio": round(debt_raw * 100, 1) if debt_raw else None,
+            "report_date": latest["_rpt"],
+        })
+
+    results.sort(key=lambda x: x["improvement"], reverse=True)
+    top = results[:n]
+
+    # 保存
+    if top:
+        df_out = pd.DataFrame(top)
+        df_out.to_csv(OUTPUT_DIR / "trend_candidates.csv", index=False, encoding="utf-8")
+        print(f"[trend_scan] 趋势改善TOP{n}: {len(top)} 只 -> {OUTPUT_DIR / 'trend_candidates.csv'}")
+    else:
+        print("[trend_scan] 无趋势改善候选")
+
+    return top
+
+
 # === 综合筛选 ===
 
 def run_full_screening(n: int = 30, quick: bool = False) -> dict:
@@ -486,6 +584,12 @@ def run_full_screening(n: int = 30, quick: bool = False) -> dict:
 
     filename = "candidates_quick.csv" if quick else "candidates.csv"
     _save_candidates(results, filename)
+
+    # 趋势改善扫描（研究工具）
+    try:
+        scan_trend_improvement()
+    except Exception as e:
+        print(f"[trend_scan] 失败: {e}")
 
     # 行业分布
     dv_codes = [c.code for c in results["deep_value"]]
