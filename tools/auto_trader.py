@@ -103,6 +103,207 @@ def _check_industry_limit(code: str, acc: VirtualAccount) -> tuple[bool, str]:
     return True, ""
 
 
+TREND_ACCOUNT_FILE = str(OUTPUT_DIR / "account_trend.json")
+TREND_PERF_FILE = OUTPUT_DIR / "performance_trend.csv"
+
+
+def trend_daily_update() -> str:
+    """趋势策略虚拟仓 — 独立于深价主仓，纸上测试趋势反转策略"""
+    socket.setdefaulttimeout(15)
+    lines = ["[趋势虚拟仓]"]
+    today = date.today()
+
+    # 加载/初始化趋势账户
+    import os as _os
+    if not _os.path.exists(TREND_ACCOUNT_FILE):
+        acc = VirtualAccount.init_with_cash(1_000_000, TREND_ACCOUNT_FILE)
+        lines.append("  初始化: ¥1,000,000")
+    else:
+        acc = VirtualAccount(TREND_ACCOUNT_FILE)
+
+    # 读取趋势候选
+    import pandas as pd
+    trend_file = OUTPUT_DIR / "trend_candidates.csv"
+    if not trend_file.exists():
+        return "\n".join(lines + ["  无趋势候选数据"])
+
+    candidates = pd.read_csv(trend_file)
+
+    # ── 1. 更新持仓价格 ──
+    for pos in acc.get_holdings():
+        kline = fetch_daily_kline(pos.code, ttl_days=0)
+        if kline.empty:
+            continue
+        new_price = float(kline.iloc[-1]["收盘"])
+        old_price = pos.current_price
+        acc.update_price(pos.code, new_price)
+        chg = (new_price / old_price - 1) if old_price > 0 else 0
+        lines.append(f"  [{pos.name}] {old_price:.2f} -> {new_price:.2f} ({chg:+.2%})")
+
+    # ── 2. 退出检查（复用主仓规则：硬止损/MA200/移动止盈/到期）──
+    cfg = _load_config()
+    stops = cfg["stops"]
+    tp = cfg["take_profit"]
+    dv = cfg["deep_value"]
+    hold_min_days = dv.get("hold_min_months", 6) * 30
+    hold_max_days = dv.get("hold_max_months", 18) * 30
+
+    for pos in list(acc.get_holdings()):
+        price = pos.current_price
+        if price <= 0:
+            continue
+        pnl = price / pos.avg_cost - 1
+        held_days = (today - datetime.strptime(
+            acc.state.trades[0].time[:10] if acc.state.trades else today.isoformat(),
+            "%Y-%m-%d").date()).days if acc.state.trades else 0
+
+        sell_reason = None
+
+        if pnl <= stops["hard_stop"]:
+            sell_reason = f"硬止损 {pnl:.1%}"
+        elif held_days >= hold_min_days and pnl < -0.10:
+            kline = fetch_daily_kline(pos.code)
+            if not kline.empty and len(kline) >= 200:
+                ma200 = float(kline["收盘"].rolling(200).mean().iloc[-1])
+                if price < ma200:
+                    sell_reason = f"跌破MA200+亏损{pnl:.1%}"
+        elif pnl >= tp["trail_trigger"]:
+            kline = fetch_daily_kline(pos.code)
+            if not kline.empty:
+                recent_high = float(kline["收盘"].tail(20).max())
+                dd = (recent_high - price) / recent_high
+                if dd >= tp["trail_drawdown"]:
+                    sell_reason = f"移动止盈 回撤{dd:.1%}"
+        elif held_days > hold_max_days:
+            sell_reason = f"持仓到期 {held_days}天"
+
+        if sell_reason:
+            ok, msg = acc.sell(pos.code, price, pos.quantity, sell_reason)
+            lines.append(f"  [卖出] {msg}")
+
+    # ── 3. 入场：质量过滤后取前3只 ──
+    held_codes = set(acc.get_holding_codes())
+    max_positions = 5
+    if len(acc.get_holdings()) < max_positions and acc.state.cash > 50000:
+        slots = max_positions - len(acc.get_holdings())
+
+        # 质量过滤
+        viable = []
+        for _, r in candidates.iterrows():
+            code = str(int(r["code"])).zfill(6)
+            if code in held_codes:
+                continue
+            imp = float(r["improvement"])
+            roe = float(r.get("roe", 0) or 0)
+            debt = float(r.get("debt_ratio", 0) or 0)
+            cur_yoy = float(r["current_yoy"])
+
+            # 过滤：基数效应 / 质量太差 / 仍在恶化
+            if imp > 500:
+                continue  # 基数效应噪音
+            if imp < 5:
+                continue  # 改善幅度太小
+            if roe < 6:
+                continue
+            if debt > 60:
+                continue
+            if cur_yoy < -20:
+                continue  # 仍在恶化
+
+            # 检查52周价格门
+            kline = fetch_daily_kline(code)
+            if kline.empty or len(kline) < 250:
+                continue
+            price_now = float(kline["收盘"].iloc[-1])
+            high_52w = float(kline["最高"].tail(250).max())
+            if high_52w > 0 and price_now > high_52w * 0.90:
+                continue  # 太接近52周高点
+
+            viable.append({
+                "code": code, "name": str(r["name"]),
+                "price": price_now,
+                "improvement": imp,
+                "roe": roe,
+            })
+
+        # 按改善幅度排序，取前N
+        viable.sort(key=lambda x: x["improvement"], reverse=True)
+        for v in viable[:slots]:
+            # 仓位计算
+            single_max = acc.state.cash * 0.20
+            qty = int(single_max / v["price"] / 100) * 100
+            if qty < 100:
+                continue
+            ok, msg = acc.buy(v["code"], v["name"], v["price"], qty, "trend_reversal",
+                            f"趋势入场: 利润改善+{v['improvement']}pp, ROE={v['roe']}%")
+            if ok:
+                lines.append(f"  [买入] {msg}")
+            if len(acc.get_holdings()) >= max_positions:
+                break
+
+    # ── 4. 净值 ──
+    acc.record_snapshot()
+
+    # ── 5. 基准对比 ──
+    bm_price = 0.0
+    bm_cache_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
+    try:
+        import akshare as ak
+        bm_df = ak.stock_zh_index_daily_em(symbol="sh000300")
+        if bm_df is not None and not bm_df.empty:
+            bm_df.columns = [c.lower() for c in bm_df.columns]
+            bm_price = float(bm_df["close"].iloc[-1])
+            bm_df.to_csv(bm_cache_file, encoding="utf-8")
+    except Exception:
+        if bm_cache_file.exists():
+            try:
+                bm_cache = pd.read_csv(bm_cache_file)
+                if "close" in bm_cache.columns:
+                    bm_price = float(bm_cache["close"].iloc[-1])
+                elif "收盘" in bm_cache.columns:
+                    bm_price = float(bm_cache["收盘"].iloc[-1])
+            except Exception:
+                pass
+
+    initial_cash = 1_000_000
+    total_ret = (acc.state.total_value / initial_cash) - 1
+
+    initial_bm = bm_price
+    if TREND_PERF_FILE.exists():
+        try:
+            perf_df = pd.read_csv(TREND_PERF_FILE)
+            if not perf_df.empty:
+                initial_bm = perf_df["benchmark_price"].iloc[0]
+        except Exception:
+            pass
+    bm_ret = (bm_price / initial_bm) - 1 if initial_bm > 0 else 0
+
+    lines.append(f"  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
+    lines.append(f"  成立以来: {total_ret:+.2%} | 沪深300: {bm_ret:+.2%} | 超额: {total_ret - bm_ret:+.2%}")
+
+    # 持久化表现
+    rows = []
+    if TREND_PERF_FILE.exists():
+        try:
+            rows = pd.read_csv(TREND_PERF_FILE).to_dict("records")
+        except Exception:
+            pass
+    today_str = today.isoformat()
+    row = {"date": today_str, "portfolio_value": round(acc.state.total_value, 2),
+           "benchmark_price": round(bm_price, 2),
+           "portfolio_return": round(total_ret, 4),
+           "benchmark_return": round(bm_ret, 4),
+           "alpha": round(total_ret - bm_ret, 4),
+           "positions": acc.state.position_count}
+    if rows and rows[-1].get("date") == today_str:
+        rows[-1] = row
+    else:
+        rows.append(row)
+    pd.DataFrame(rows).to_csv(TREND_PERF_FILE, index=False, encoding="utf-8")
+
+    return "\n".join(lines)
+
+
 def daily_update() -> str:
     socket.setdefaulttimeout(15)  # 所有网络调用15秒超时, 防止akshare API卡死
     lines = []
@@ -442,6 +643,13 @@ def daily_update() -> str:
             pass
     except Exception as e:
         lines.append(f"\n[候选池] 刷新失败: {e}")
+
+    # 9. 趋势策略虚拟仓（独立纸上测试，不影响主仓）
+    try:
+        trend_report = trend_daily_update()
+        lines.append(f"\n{trend_report}")
+    except Exception as e:
+        lines.append(f"\n[趋势虚拟仓] 失败: {e}")
 
     return "\n".join(lines)
 

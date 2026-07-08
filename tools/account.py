@@ -76,14 +76,16 @@ class AccountState:
 class VirtualAccount:
     """虚拟账户，所有状态持久化到 JSON"""
 
-    def __init__(self):
+    def __init__(self, file_path: str | None = None):
+        self._file_path = file_path or ACCOUNT_FILE
         self.state: AccountState = self._load()
 
     @classmethod
-    def init_with_cash(cls, amount: float) -> "VirtualAccount":
+    def init_with_cash(cls, amount: float, file_path: str | None = None) -> "VirtualAccount":
         """首次初始化，清空旧状态"""
         state = AccountState(cash=amount)
         acc = cls.__new__(cls)
+        acc._file_path = file_path or ACCOUNT_FILE
         acc.state = state
         acc._save()
         return acc
@@ -91,14 +93,14 @@ class VirtualAccount:
     # ---- 持久化 ----
 
     def _load(self) -> AccountState:
-        if os.path.exists(ACCOUNT_FILE):
-            with open(ACCOUNT_FILE, "r", encoding="utf-8") as f:
+        if os.path.exists(self._file_path):
+            with open(self._file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return self._deserialize(data)
         return AccountState(cash=0)
 
     def _save(self):
-        os.makedirs(os.path.dirname(ACCOUNT_FILE), exist_ok=True)
+        os.makedirs(os.path.dirname(self._file_path), exist_ok=True)
         data = {
             "cash": self.state.cash,
             "positions": {k: asdict(v) for k, v in self.state.positions.items()},
@@ -107,11 +109,13 @@ class VirtualAccount:
             "created_at": self.state.created_at,
         }
         # 原子写入：先写临时文件再 rename
-        tmp = ACCOUNT_FILE + ".tmp"
+        tmp = self._file_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, ACCOUNT_FILE)
-        self._save_trades_csv()
+        os.replace(tmp, self._file_path)
+        # 仅主账户同步交易CSV
+        if self._file_path == ACCOUNT_FILE:
+            self._save_trades_csv()
 
     def _save_trades_csv(self):
         """同步交易记录到 CSV"""
