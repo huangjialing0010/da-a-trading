@@ -110,14 +110,14 @@ TREND_PERF_FILE = OUTPUT_DIR / "performance_trend.csv"
 def trend_daily_update() -> str:
     """趋势策略虚拟仓 — 独立于深价主仓，纸上测试趋势反转策略"""
     socket.setdefaulttimeout(15)
-    lines = ["[趋势虚拟仓]"]
+    lines = []
     today = date.today()
 
     # 加载/初始化趋势账户
     import os as _os
     if not _os.path.exists(TREND_ACCOUNT_FILE):
         acc = VirtualAccount.init_with_cash(1_000_000, TREND_ACCOUNT_FILE)
-        lines.append("  初始化: ¥1,000,000")
+        lines.append("初始化: ¥1,000,000")
     else:
         acc = VirtualAccount(TREND_ACCOUNT_FILE)
 
@@ -581,7 +581,8 @@ def daily_update() -> str:
     bm_ret = (bm_price / initial_bm) - 1 if initial_bm > 0 else 0
     alpha = total_ret - bm_ret
 
-    lines.append(f"\n总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
+    lines.append(f"\n═══ 深价主仓 ═══")
+    lines.append(f"总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
     lines.append(f"策略成立以来: {total_ret:+.2%} | 同期沪深300: {bm_ret:+.2%} | 超额: {alpha:+.2%}")
     lines.append(f"数据日期: {data_date}（{days_stale}天前）{stale_warn}")
 
@@ -648,10 +649,11 @@ def daily_update() -> str:
     except Exception as e:
         lines.append(f"\n[候选池] 刷新失败: {e}")
 
-    # 9. 趋势策略虚拟仓（独立纸上测试，不影响主仓）
+    # 9. 趋势策略虚拟仓（纸上测试，非实盘！！！）
     try:
         trend_report = trend_daily_update()
-        lines.append(f"\n{trend_report}")
+        lines.append(f"\n═══ 趋势虚拟仓（纸上测试） ═══")
+        lines.append(f"{trend_report}")
     except Exception as e:
         lines.append(f"\n[趋势虚拟仓] 失败: {e}")
 

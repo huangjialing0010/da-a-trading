@@ -330,6 +330,8 @@ def trend_weekly_review() -> str:
     lines.append("")
     lines.append("> 策略：财报趋势改善 + 质量过滤 + MA200止损。自动执行，仅供观察。")
     lines.append("")
+    lines.append("## ⚠️ 纸上测试 — 非实盘，仅供参考")
+    lines.append("")
 
     # 账户概览
     total = acc.state.total_value
@@ -430,6 +432,8 @@ def trend_monthly_review() -> str:
     lines.append(f"# 趋势策略月度复盘")
     lines.append(f"**月份**: {today.year}年{today.month}月")
     lines.append(f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    lines.append("")
+    lines.append("## ⚠️ 纸上测试 — 非实盘，仅供参考")
     lines.append("")
 
     total = acc.state.total_value
