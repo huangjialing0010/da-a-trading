@@ -26,6 +26,7 @@ deep_value:
   max_pledge_ratio: 0.50        # 大股东质押率上限
   min_drawdown_52w: 0.40        # 距52周高点最小跌幅
   universe_top_n: 70             # 仅扫描沪深300前70大市值（回测2019-2026：策略+12.2% vs 基准+65.9%，利润全部来自2020年恐慌，之后6年零交易）
+  trend_price_percentile: 0.30   # 趋势反转策略：价格处在1年最低N%区间时触发初选（0.30=最低30%）
   volume_shrink_days: 5         # 成交量萎缩连续天数
   volume_shrink_ratio: 0.50     # 成交量/20日均量上限
   pe_percentile_max: 0.20       # PE近5年分位上限（最低20%区间）

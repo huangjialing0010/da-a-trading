@@ -66,11 +66,13 @@ class BacktestEngine:
 
     def __init__(self, start_date: str = "2019-01-01", end_date: str | None = None,
                  initial_cash: float = 1_000_000, universe_size: int | None = None,
-                 config_overrides: dict | None = None):
+                 config_overrides: dict | None = None,
+                 mode: str = "deep_value"):  # "deep_value" | "trend_reversal"
         self.start_date = start_date
         self.end_date = end_date or date.today().isoformat()
         self.initial_cash = initial_cash
         self.cash = initial_cash
+        self.mode = mode
 
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             self.config = yaml.safe_load(f)
@@ -328,7 +330,104 @@ class BacktestEngine:
         print(f"[回测] {n_with} 只有入场触发, 共 {total_triggers} 个触发日")
         return triggers
 
+    def _precompute_trend_triggers(self) -> dict[str, list[str]]:
+        """预计算趋势改善的入场触发日期：每个财报发布后。
+        不设价格门槛——趋势+质量合格就入场，用价格分位排序优先级。
+        """
+        print("[回测] 预计算季度财报触发日历...")
+        triggers = {}
+        total = len(self._universe)
+
+        # 先收集所有交易日
+        bm_close = self._get_benchmark_data()
+        all_trading_days = sorted(bm_close.index.strftime("%Y-%m-%d"))
+
+        for i, (_, row) in enumerate(self._universe.iterrows()):
+            code = str(row["code"]).zfill(6)
+            name = str(row.get("name", ""))
+
+            if "ST" in name:
+                continue
+
+            df_f = self._fin_data.get(code)
+            if df_f is None or df_f.empty:
+                continue
+
+            # 确保K线存在
+            if self._get_kline(code).empty:
+                continue
+
+            # 每个财报可用日期后最近一个交易日作为触发
+            seen_dates = set()
+            for avail_date_str in sorted(df_f["_avail_date"].unique()):
+                if avail_date_str < self.start_date or avail_date_str > self.end_date:
+                    continue
+                # 找该日期或之后的第一个交易日
+                for td in all_trading_days:
+                    if td >= avail_date_str and td not in seen_dates:
+                        seen_dates.add(td)
+                        break
+
+            if seen_dates:
+                triggers[code] = sorted(seen_dates)
+
+            if (i + 1) % 100 == 0:
+                print(f"  预计算 [{i+1}/{total}] 有触发: {sum(1 for v in triggers.values() if v)} 只")
+
+        n_with = sum(1 for v in triggers.values() if v)
+        total_triggers = sum(len(v) for v in triggers.values())
+        print(f"[回测] 季度触发: {n_with} 只有入场触发, 共 {total_triggers} 个触发日")
+        return triggers
+
     def _get_price_on_date(self, code: str, date_str: str) -> float | None:
+        """获取某只股票在指定日期的收盘价"""
+        df = self._klines.get(code)
+        if df is None or df.empty:
+            return None
+        df.index = pd.to_datetime(df.index)
+        subset = df[df.index <= date_str]
+        if subset.empty:
+            return None
+        return float(subset["收盘"].iloc[-1])
+
+    def _check_trend_improving(self, code: str, date_str: str) -> tuple[bool, float]:
+        """检查利润YoY是否连续两个同类型报期改善。
+        取最新可获取的报告，找同月份的历史报告，比较YoY趋势。
+        返回 (improving, trend_score)"""
+        df = self._fin_data.get(code)
+        if df is None or df.empty:
+            return False, 0
+
+        available = df[df["_avail_date"] <= date_str]
+        if len(available) < 3:
+            return False, 0
+
+        latest = available.iloc[-1]
+        latest_month = latest["_rpt_str"][5:7]
+
+        # 同月份报告期（同季度类型）
+        same_type = available[available["_rpt_str"].str[5:7] == latest_month]
+        if len(same_type) < 2:
+            return False, 0
+
+        # 取最近两个同类型报期的利润YoY
+        last_two = same_type.iloc[-2:]
+        yoy_values = []
+        for _, row in last_two.iterrows():
+            yoy = _parse_pct(row.get("净利润同比增长率"))
+            if yoy is not None:
+                yoy_values.append(yoy)
+
+        if len(yoy_values) < 2:
+            return False, 0
+
+        prev_yoy, curr_yoy = yoy_values[0], yoy_values[1]
+
+        # 改善条件：最新 > 前一期
+        trend_score = curr_yoy - prev_yoy
+        improving = trend_score > 0
+
+        return improving, trend_score
         """获取某只股票在指定日期的收盘价"""
         df = self._klines.get(code)
         if df is None or df.empty:
@@ -354,7 +453,10 @@ class BacktestEngine:
         trading_dates = bm_close.index
 
         # 预计算入场触发日历
-        trigger_calendar = self._precompute_triggers()
+        if self.mode == "trend_reversal":
+            trigger_calendar = self._precompute_trend_triggers()
+        else:
+            trigger_calendar = self._precompute_triggers()
 
         # 构建按日期排序的触发队列
         trigger_queue = []
@@ -364,6 +466,7 @@ class BacktestEngine:
         trigger_queue.sort(key=lambda x: x[0])
 
         trigger_ptr = 0
+        deferred = []  # 仓位满时延迟处理的候选代码
         n_dates = len(trading_dates)
         print(f"[回测] 交易日: {n_dates} 天, 入场触发队列: {len(trigger_queue)} 个")
 
@@ -382,7 +485,20 @@ class BacktestEngine:
             # ── 3. 分批加仓检查 ──
             self._process_batches(dt, date_str)
 
-            # ── 4. 扫描新入场（仅检查触发队列中今天的信号）──
+            # ── 4. 扫描新入场 ──
+            # 4a. 先重试被延迟的候选（仓位满时跳过的）
+            for code in list(deferred):
+                if code in self.positions:
+                    deferred.remove(code)
+                    continue
+                if len(self.positions) >= 8:
+                    break
+                if self.cash < self.initial_cash * 0.05:
+                    break
+                if self._execute_entry(code, date_str):
+                    deferred.remove(code)
+
+            # 4b. 处理今天的触发，仓位满时延迟而非丢弃
             while trigger_ptr < len(trigger_queue) and trigger_queue[trigger_ptr][0] == date_str:
                 _, code = trigger_queue[trigger_ptr]
                 trigger_ptr += 1
@@ -390,9 +506,11 @@ class BacktestEngine:
                 if code in self.positions:
                     continue
                 if len(self.positions) >= 8:
-                    break
+                    if code not in deferred:
+                        deferred.append(code)
+                    continue
                 if self.cash < self.initial_cash * 0.05:
-                    break
+                    continue  # 不break，现金可能因卖出回流
 
                 self._execute_entry(code, date_str)
 
@@ -497,16 +615,22 @@ class BacktestEngine:
                              f"第{pos.batch+1}批加仓: 企稳确认")
                     pos.batch += 1
 
-    def _execute_entry(self, code, date_str):
-        """执行入场"""
+    def _execute_entry(self, code, date_str) -> bool:
+        """执行入场。返回 True=成功买入，False=跳过（财务/趋势/价格不满足）"""
         # 按入场日期检查当时可获得的财务数据（消除前视偏差）
         fin_score, fin_flags, _ = self._fin_check_at_date(code, date_str)
         if fin_score < 0:
-            return  # 当时财报不达标，不买入
+            return False
+
+        # 趋势反转模式：额外要求利润YoY改善
+        if self.mode == "trend_reversal":
+            improving, trend_score = self._check_trend_improving(code, date_str)
+            if not improving:
+                return False
 
         price = self._get_price_on_date(code, date_str)
         if price is None or price <= 0:
-            return
+            return False
 
         # 计算买入数量
         batch_cfg = self.dv["batch_entry"]
@@ -515,7 +639,7 @@ class BacktestEngine:
         amount = min(self.cash * 0.3, single_max)
         qty = int(amount / price / 100) * 100
         if qty < 100:
-            return
+            return False
 
         # 分批计划
         total_planned = qty / first_ratio
@@ -545,6 +669,7 @@ class BacktestEngine:
             direction="BUY", price=price, quantity=qty,
             reason=f"入场: 深度价值信号",
         ))
+        return True
 
     # ── 交易操作 ──
 
