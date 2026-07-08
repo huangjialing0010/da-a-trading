@@ -27,6 +27,17 @@ OUTPUT_DIR = BASE_DIR / "output"
 BATCH_STATE_FILE = OUTPUT_DIR / "batch_state.json"
 PANIC_STATE_FILE = OUTPUT_DIR / "panic_state.json"
 
+# K线内存缓存：同一脚本内同一代码只拉一次网络
+_kline_cache: dict[str, "pd.DataFrame"] = {}
+
+
+def _get_kline(code: str, ttl_days: int = 1) -> "pd.DataFrame":
+    """fetch_daily_kline 的内存缓存包装。ttl_days=0 首次拉取后缓存。"""
+    import pandas as pd
+    if code not in _kline_cache:
+        _kline_cache[code] = fetch_daily_kline(code, ttl_days=ttl_days)
+    return _kline_cache[code]
+
 
 def _load_batch_state() -> dict:
     if BATCH_STATE_FILE.exists():
@@ -122,7 +133,7 @@ def daily_update() -> str:
 
     # 1. 更新持仓价格
     for pos in acc.get_holdings():
-        kline = fetch_daily_kline(pos.code, ttl_days=0)
+        kline = _get_kline(pos.code, ttl_days=0)
         if kline.empty:
             lines.append(f"[{pos.name}] 无法获取K线")
             continue
@@ -159,7 +170,7 @@ def daily_update() -> str:
                         continue  # 跳过，不执行
 
             # 执行卖出
-            price = s.price if s.price > 0 else float(fetch_daily_kline(code).iloc[-1]["收盘"])
+            price = s.price if s.price > 0 else float(_get_kline(code).iloc[-1]["收盘"])
             qty = s.quantity if s.quantity > 0 else acc.get_position(code).quantity
             ok, msg = acc.sell(code, price, qty, s.reason)
             lines.append(f"  [卖出] {msg}")
@@ -188,7 +199,7 @@ def daily_update() -> str:
 
         if isinstance(trigger, float):
             # 价格触发：跌到目标价
-            kline = fetch_daily_kline(code, ttl_days=0)
+            kline = _get_kline(code, ttl_days=0)
             if kline.empty:
                 continue
             current = float(kline.iloc[-1]["收盘"])
@@ -204,7 +215,7 @@ def daily_update() -> str:
 
         elif trigger == "stable":
             # 企稳触发：站上20日均线 + 成交量放大
-            kline = fetch_daily_kline(code, ttl_days=0)
+            kline = _get_kline(code, ttl_days=0)
             if kline.empty:
                 continue
             close = kline["收盘"]
@@ -262,7 +273,7 @@ def daily_update() -> str:
                 lines.append(f"  [恐慌] {etf_names.get(etf_code, etf_code)} 已持仓，跳过恐慌买入")
                 continue
 
-            kline = fetch_daily_kline(etf_code, ttl_days=0)
+            kline = _get_kline(etf_code, ttl_days=0)
             if kline.empty:
                 continue
             price = float(kline.iloc[-1]["收盘"])
@@ -282,7 +293,7 @@ def daily_update() -> str:
     elif panic_state["active"] and panic_state["batch"] < panic_cfg["batches"]:
         batch_drop = panic_cfg["batch_drop"]
         for entry in panic_state["entries"]:
-            kline = fetch_daily_kline(entry["code"], ttl_days=0)
+            kline = _get_kline(entry["code"], ttl_days=0)
             if kline.empty:
                 continue
             current = float(kline.iloc[-1]["收盘"])
@@ -316,7 +327,7 @@ def daily_update() -> str:
     # 数据新鲜度（取任一持仓K线日期）
     data_date = "未知"
     for p in acc.get_holdings():
-        k = fetch_daily_kline(p.code)
+        k = _get_kline(p.code)
         if not k.empty:
             data_date = str(k.index[-1].date())
             break

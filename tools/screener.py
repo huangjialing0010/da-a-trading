@@ -3,6 +3,7 @@
 import sys
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
@@ -43,6 +44,18 @@ def load_config() -> dict:
 
 # === 深度价值筛选（新版：成分股 + 逐个K线） ===
 
+
+def _worker_fetch_and_score(code: str, name: str, dv: dict) -> dict | None:
+    """拉K线+量价评分，供线程池并行调用。不修改共享状态。"""
+    snap = fetch_stock_quick_snapshot(code)
+    if snap is None:
+        return None
+    score, flags, metrics = _score_snapshot(snap, dv)
+    if score <= 0:
+        return None
+    return {"code": code, "name": name, "score": score, "flags": flags, "metrics": metrics}
+
+
 def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
                       quick_mode: bool = False) -> list[Candidate]:
     """深度价值筛选
@@ -66,65 +79,65 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
 
     print(f"[screener] 股票池: {len(universe)} 只，开始量价初筛...")
 
-    # --- Pass 1: 量价初筛 ---
-    passed = []
-    total = min(len(universe), max_check)
-
-    for i, (_, row) in enumerate(universe.head(max_check).iterrows()):
+    # --- Pass 1: 量价初筛（并行拉K线，10线程） ---
+    tasks = []
+    for _, row in universe.head(max_check).iterrows():
         code = str(row["code"]).zfill(6)
         name = str(row["name"])
-
-        # 跳过ST
         if "ST" in name:
             continue
+        tasks.append((code, name, str(row.get("index", ""))))
 
-        # 进度显示
-        if (i + 1) % 10 == 0:
-            print(f"  [{i+1}/{total}] 通过: {len(passed)} 只...")
+    print(f"[screener] 股票池: {len(universe)} 只，并行量价初筛 {len(tasks)} 只（10线程）...")
 
-        snap = fetch_stock_quick_snapshot(code)
-        if snap is None:
+    raw_results = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(_worker_fetch_and_score, code, name, dv): (code, name, idx)
+                   for code, name, idx in tasks}
+        for future in as_completed(futures):
+            result = future.result()
+            if result is not None:
+                code, name, idx = futures[future]
+                result["index"] = idx
+                raw_results.append(result)
+
+    print(f"[screener] 量价初筛完成: {len(raw_results)} 只通过")
+
+    # --- 行业+商品周期检查（串行，涉及模块级缓存） ---
+    passed = []
+    for r in raw_results:
+        code, name, score = r["code"], r["name"], r["score"]
+        flags = list(r["flags"])
+        metrics = dict(r["metrics"])
+        metrics["index"] = r.get("index", "")
+
+        industry_state = classify_stock(code, name) if is_enabled() else "neutral"
+        if industry_state == "decline":
             continue
 
-        score, flags, metrics = _score_snapshot(snap, dv)
+        sector_bonus = get_sector_score(code, name) if is_enabled() else 0
+        if sector_bonus > 0:
+            score += sector_bonus
+            flags.append(f"行业逻辑支撑 +{sector_bonus}分")
 
-        if score > 0:
-            # 行业过滤
-            industry_state = classify_stock(code, name) if is_enabled() else "neutral"
-            if industry_state == "decline":
-                continue  # 结构性衰退行业，直接跳过
+        cycle_warning = ""
+        if dv.get("commodity_cycle_check", True):
+            try:
+                from .commodity_fetcher import check_commodity_cycle
+                cycle = check_commodity_cycle(name)
+                if cycle:
+                    flags.append(cycle["warning"])
+                    cycle_warning = cycle["warning"]
+                    if cycle["penalty"] > 0:
+                        score -= cycle["penalty"]
+            except Exception:
+                pass
 
-            sector_bonus = get_sector_score(code, name) if is_enabled() else 0
-            if sector_bonus > 0:
-                score += sector_bonus
-                flags.append(f"行业逻辑支撑 +{sector_bonus}分")
-
-            # 商品周期检测
-            cycle_warning = ""
-            if dv.get("commodity_cycle_check", True):
-                try:
-                    from .commodity_fetcher import check_commodity_cycle
-                    cycle = check_commodity_cycle(name)
-                    if cycle:
-                        flags.append(cycle["warning"])
-                        cycle_warning = cycle["warning"]
-                        if cycle["penalty"] > 0:
-                            score -= cycle["penalty"]
-                except Exception:
-                    pass  # 商品数据不可用不影响筛选
-
-            metrics["index"] = row.get("index", "")
-            passed.append({
-                "code": code, "name": name,
-                "score": score, "flags": flags, "metrics": metrics,
-                "cycle_warning": cycle_warning,
-            })
-
-        # 控制速度，避免被封IP
-        if (i + 1) % 10 == 0:
-            time.sleep(0.5)
-
-    print(f"[screener] 量价初筛完成: {len(passed)} 只通过 (共扫描 {total} 只)")
+        passed.append({
+            "code": code, "name": name,
+            "score": score, "flags": flags, "metrics": metrics,
+            "cycle_warning": cycle_warning,
+        })
 
     # 按评分排序
     passed.sort(key=lambda x: x["score"], reverse=True)
@@ -170,8 +183,6 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
                 metrics=metrics,
                 cycle_warning=p.get("cycle_warning", ""),
             ))
-
-        time.sleep(0.3)
 
     candidates.sort(key=lambda c: c.score, reverse=True)
     return candidates[:n]
