@@ -6,7 +6,7 @@
       "name": "云铝股份",
       "quantity": 8900,
       "avg_cost": 22.39,
-      "current_price": 22.39,
+      "current_price": 22.32,
       "strategy": "trend_reversal"
     },
     "000657": {
@@ -14,7 +14,7 @@
       "name": "中钨高新",
       "quantity": 2000,
       "avg_cost": 76.84,
-      "current_price": 76.84,
+      "current_price": 73.95,
       "strategy": "trend_reversal"
     },
     "002558": {
@@ -22,7 +22,7 @@
       "name": "巨人网络",
       "quantity": 4400,
       "avg_cost": 29.09,
-      "current_price": 29.09,
+      "current_price": 28.0,
       "strategy": "trend_reversal"
     }
   },
@@ -61,9 +61,9 @@
   "equity_snapshots": [
     {
       "date": "2026-07-08",
-      "total_value": 1000000.0,
+      "total_value": 988801.0,
       "cash": 519053.0,
-      "market_value": 480947.0,
+      "market_value": 469748.0,
       "position_count": 3
     }
   ],
