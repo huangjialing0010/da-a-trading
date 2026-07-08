@@ -598,16 +598,20 @@ def daily_update() -> str:
     # 7. 周报/月报（非关键路径，崩了不影响主流程）
     if today.weekday() == 4:  # 周五
         try:
-            from .review import weekly_review
+            from .review import weekly_review, trend_weekly_review
             weekly_review(acc)
             lines.append(f"\n[周报] weekly_{today.strftime('%Y%m%d')}.md")
+            trend_weekly_review()
+            lines.append(f"[趋势周报] trend_weekly_{today.strftime('%Y%m%d')}.md")
         except Exception as e:
             lines.append(f"\n[周报] 生成失败: {e}")
     if today.day == 1:  # 每月1号
         try:
-            from .review import monthly_review
+            from .review import monthly_review, trend_monthly_review
             monthly_review(acc)
             lines.append(f"[月报] monthly_{today.strftime('%Y%m')}.md")
+            trend_monthly_review()
+            lines.append(f"[趋势月报] trend_monthly_{today.strftime('%Y%m')}.md")
         except Exception as e:
             lines.append(f"[月报] 生成失败: {e}")
 
