@@ -21,7 +21,7 @@ import numpy as np
 import yaml
 
 from .data_fetcher import (
-    fetch_daily_kline, fetch_stock_universe, fetch_market_water_level,
+    fetch_daily_kline, fetch_stock_universe, fetch_market_water_level, _parse_pct,
 )
 from .account import Trade
 from .screener import _financial_check
@@ -97,7 +97,7 @@ class BacktestEngine:
 
         # 缓存
         self._klines: dict[str, pd.DataFrame] = {}
-        self._fin_scores: dict[str, float] = {}  # code -> financial score (>=0 = pass)
+        self._fin_data: dict[str, pd.DataFrame] = {}  # code -> 原始财务DataFrame(历史各期)
         self._universe: pd.DataFrame | None = None
 
     # ── 数据加载 ──
@@ -114,28 +114,124 @@ class BacktestEngine:
         print(f"[回测] 股票池: {len(self._universe)} 只")
 
     def load_financials(self):
-        """预计算全池财务评分（用当前数据近似）"""
-        print("[回测] 预计算财务评分...")
-        passed = 0
+        """预加载全池历史财务数据（原始DataFrame，不做评分）。
+        改为在入场决策时按当时可获得的最新报告评分，消除前视偏差。
+        """
+        print("[回测] 加载历史财务数据（无前视偏差）...")
+        import akshare as ak
+        loaded = 0
         for i, (_, row) in enumerate(self._universe.iterrows()):
             code = str(row["code"]).zfill(6)
             name = str(row.get("name", ""))
 
             if "ST" in name:
-                self._fin_scores[code] = -1
                 continue
 
-            fin_score, _, _ = _financial_check(code, self.dv)
-            self._fin_scores[code] = fin_score
-            if fin_score >= 0:
-                passed += 1
+            try:
+                df = ak.stock_financial_abstract_ths(symbol=code, indicator="按报告期")
+                if df is not None and not df.empty:
+                    df["_rpt_str"] = df["报告期"].astype(str)
+                    # 计算报告实际可获取日期（报告期 + 法定披露延迟）
+                    # 年报(12-31): +120天(4/30), 半年(06-30): +62天(8/31), 其他: +45天
+                    def _avail_delay(rpt_str):
+                        rpt_dt = datetime.strptime(rpt_str, "%Y-%m-%d")
+                        m = rpt_dt.month
+                        delay = 120 if m == 12 else (62 if m == 6 else 45)
+                        return (rpt_dt + timedelta(days=delay)).strftime("%Y-%m-%d")
+                    df["_avail_date"] = df["_rpt_str"].apply(_avail_delay)
+                    self._fin_data[code] = df
+                    loaded += 1
+            except Exception:
+                pass
 
             if (i + 1) % 50 == 0:
-                print(f"  财务评分 [{i+1}/{len(self._universe)}] 通过: {passed}")
+                print(f"  财务数据 [{i+1}/{len(self._universe)}] 已加载: {loaded}")
 
-            time.sleep(0.1)  # API 限速
+            time.sleep(0.1)
 
-        print(f"[回测] 财务通过: {passed}/{len(self._universe)}")
+        print(f"[回测] 财务数据加载完成: {loaded}/{len(self._universe)}")
+
+    def _fin_check_at_date(self, code: str, date_str: str) -> tuple[float, list[str], dict]:
+        """获取指定日期可获得的财务评分。
+        累计指标（ROE/EPS/CF）取当时已发布的最新年报，
+        趋势指标取当时已发布的最新报期。已考虑披露延迟。
+        返回 (score, flags, metrics)，score < 0 表示淘汰。
+        """
+        df = self._fin_data.get(code)
+        if df is None or df.empty:
+            return -1, [], {}
+
+        available = df[df["_avail_date"] <= date_str]
+        if available.empty:
+            return -1, [], {}
+
+        # 年报：累计指标用
+        annual = available[available["_rpt_str"].str.endswith("12-31")]
+        if annual.empty:
+            return -1, [], {}
+        anne = annual.iloc[-1]
+
+        latest = available.iloc[-1]  # 最新一期：趋势+负债用
+
+        flags, metrics = [], {}
+        score = 0.0
+
+        # ROE（年报）
+        roe = _parse_pct(anne.get("净资产收益率"))
+        if roe is not None:
+            metrics["roe"] = round(roe * 100, 2)
+            if roe >= self.dv["min_deducted_roe"]:
+                score += 15
+                flags.append(f"ROE {roe*100:.1f}%")
+            else:
+                flags.append(f"[淘汰]ROE {roe*100:.1f}%低于{self.dv['min_deducted_roe']:.0%}")
+                return -1, flags, metrics
+
+        # 负债率（最新）
+        debt = _parse_pct(latest.get("资产负债率"))
+        if debt is not None:
+            metrics["debt_ratio"] = round(debt * 100, 2)
+            if debt <= self.dv["max_interest_debt_ratio"]:
+                score += 8
+                flags.append(f"负债率{debt*100:.1f}%")
+            else:
+                flags.append(f"[注意]负债率{debt*100:.1f}%偏高")
+
+        # CF/EPS（年报）
+        ocf = _parse_pct(anne.get("每股经营现金流"))
+        eps = _parse_pct(anne.get("基本每股收益"))
+        if ocf is not None and eps is not None and eps > 0:
+            cf_ratio = ocf / eps
+            metrics["cf_np_ratio"] = round(cf_ratio, 2)
+            if cf_ratio >= self.dv["min_cashflow_ratio"]:
+                score += 12
+                flags.append(f"CFO/EPS {cf_ratio:.2f}")
+            elif ocf < 0:
+                flags.append("[淘汰]经营现金流为负")
+                return -1, flags, metrics
+        elif ocf is not None and ocf > 0:
+            score += 8
+
+        # 利润YoY（最新一期，捕捉拐点）
+        profit_yoy = _parse_pct(latest.get("净利润同比增长率"))
+        if profit_yoy is not None:
+            metrics["profit_yoy"] = round(profit_yoy * 100, 2)
+            if profit_yoy <= -0.20:
+                flags.append(f"[淘汰]净利润同比{profit_yoy*100:.1f}%")
+                return -1, flags, metrics
+            elif profit_yoy > 0:
+                score += 10
+
+        # 营收YoY
+        rev_yoy = _parse_pct(latest.get("营业总收入同比增长率"))
+        if rev_yoy is not None:
+            metrics["revenue_yoy"] = round(rev_yoy * 100, 2)
+            if rev_yoy <= -0.2:
+                score -= 20
+            elif rev_yoy > 0:
+                score += 5
+
+        return score, flags, metrics
 
     def _get_kline(self, code: str) -> pd.DataFrame:
         """获取 K 线，优先缓存"""
@@ -199,9 +295,7 @@ class BacktestEngine:
             code = str(row["code"]).zfill(6)
             name = str(row.get("name", ""))
 
-            # 财务不通过直接跳过
-            if self._fin_scores.get(code, -1) < 0:
-                continue
+            # 财务检查移到入场决策时按日期做，消除前视偏差
             if "ST" in name:
                 continue
 
@@ -405,6 +499,11 @@ class BacktestEngine:
 
     def _execute_entry(self, code, date_str):
         """执行入场"""
+        # 按入场日期检查当时可获得的财务数据（消除前视偏差）
+        fin_score, fin_flags, _ = self._fin_check_at_date(code, date_str)
+        if fin_score < 0:
+            return  # 当时财报不达标，不买入
+
         price = self._get_price_on_date(code, date_str)
         if price is None or price <= 0:
             return
