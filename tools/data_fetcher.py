@@ -155,60 +155,70 @@ def fetch_financial_data(code: str, ttl_days: int = 30) -> dict:
         if df is None or df.empty:
             return result
 
-        latest = df.iloc[-1]
+        # 取最新年报（12-31行），ROE/EPS/CF等损益指标用年度数据才有可比性
+        df["_rpt_str"] = df["报告期"].astype(str)
+        annual_mask = df["_rpt_str"].str.endswith("12-31")
+        annual = df[annual_mask]
+        if not annual.empty:
+            anne = annual.iloc[-1]  # 最新年报
+        else:
+            anne = df.iloc[-1]  # 降级
 
-        # ROE
-        roe = _parse_pct(latest.get("净资产收益率"))
+        latest = df.iloc[-1]  # 最新一期（资产负债表项目用）
+
+        # ROE（年度）
+        roe = _parse_pct(anne.get("净资产收益率"))
         if roe is not None:
             result["roe"] = roe
 
-        # 资产负债率
+        # 资产负债率（时点指标，取最新）
         debt = _parse_pct(latest.get("资产负债率"))
         if debt is not None:
             result["debt_ratio"] = debt
 
-        # 净利润
-        net_profit = _parse_pct(latest.get("净利润"))
+        # 净利润（年度）
+        net_profit = _parse_pct(anne.get("净利润"))
         if net_profit is not None:
             result["net_profit"] = net_profit
 
-        # 营收同比增长
+        # 营收同比增长（最新一期，捕捉拐点趋势）
         rev_yoy = _parse_pct(latest.get("营业总收入同比增长率"))
         if rev_yoy is not None:
             result["revenue_yoy"] = rev_yoy
 
-        # 利润同比增长
+        # 利润同比增长（最新一期，捕捉拐点趋势）
         ni_yoy = _parse_pct(latest.get("净利润同比增长率"))
         if ni_yoy is not None:
             result["profit_yoy"] = ni_yoy
 
-        # 扣非利润同比增长
+        # 扣非利润同比增长（最新一期）
         deducted_yoy = _parse_pct(latest.get("扣非净利润同比增长率"))
         if deducted_yoy is not None:
             result["deducted_profit_yoy"] = deducted_yoy
 
-        # 每股经营现金流
-        ocf_ps = _parse_pct(latest.get("每股经营现金流"))
+        # 每股经营现金流（年度累计）
+        ocf_ps = _parse_pct(anne.get("每股经营现金流"))
         if ocf_ps is not None:
             result["ocf_per_share"] = ocf_ps
 
-        # 每股净资产
+        # 每股净资产（时点，取最新）
         bv_ps = _parse_pct(latest.get("每股净资产"))
         if bv_ps is not None:
             result["book_value_per_share"] = bv_ps
 
-        # 基本每股收益
-        eps = _parse_pct(latest.get("基本每股收益"))
+        # 基本每股收益（年度）
+        eps = _parse_pct(anne.get("基本每股收益"))
         if eps is not None:
             result["eps"] = eps
 
-        # 销售净利率
-        npm = _parse_pct(latest.get("销售净利率"))
+        # 销售净利率（年度）
+        npm = _parse_pct(anne.get("销售净利率"))
         if npm is not None:
             result["net_profit_margin"] = npm
 
-        # 报告期
-        result["report_date"] = str(latest.get("报告期", ""))
+        # 报告期：混合口径 — 累计指标用年报，趋势用最新期
+        result["report_date"] = str(anne.get("报告期", ""))
+        result["yoy_period"] = str(latest.get("报告期", ""))
 
         if result:
             with open(cache_file, "w", encoding="utf-8") as f:
