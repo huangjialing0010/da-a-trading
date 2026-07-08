@@ -391,8 +391,10 @@ class BacktestEngine:
         return float(subset["收盘"].iloc[-1])
 
     def _check_trend_improving(self, code: str, date_str: str) -> tuple[bool, float]:
-        """检查利润YoY是否连续两个同类型报期改善。
-        取最新可获取的报告，找同月份的历史报告，比较YoY趋势。
+        """严格版趋势改善检查：
+        1. 连续两个同类型报期改善（curr>prev>prev_prev）
+        2. 改善幅度≥2个百分点（过滤微弱波动）
+        3. 当前季度利润 > 近8季度均值的80%（过滤基数效应）
         返回 (improving, trend_score)"""
         df = self._fin_data.get(code)
         if df is None or df.empty:
@@ -405,29 +407,48 @@ class BacktestEngine:
         latest = available.iloc[-1]
         latest_month = latest["_rpt_str"][5:7]
 
-        # 同月份报告期（同季度类型）
+        # 同月份报告期（同季度类型），需要至少3个点
         same_type = available[available["_rpt_str"].str[5:7] == latest_month]
-        if len(same_type) < 2:
+        if len(same_type) < 3:
             return False, 0
 
-        # 取最近两个同类型报期的利润YoY
-        last_two = same_type.iloc[-2:]
+        last_three = same_type.iloc[-3:]
         yoy_values = []
-        for _, row in last_two.iterrows():
+        profit_values = []
+        for _, row in last_three.iterrows():
             yoy = _parse_pct(row.get("净利润同比增长率"))
             if yoy is not None:
                 yoy_values.append(yoy)
+            p = _parse_pct(row.get("净利润"))
+            if p is not None:
+                profit_values.append(p)
 
-        if len(yoy_values) < 2:
+        if len(yoy_values) < 3:
             return False, 0
 
-        prev_yoy, curr_yoy = yoy_values[0], yoy_values[1]
+        y1, y2, y3 = yoy_values[0], yoy_values[1], yoy_values[2]
 
-        # 改善条件：最新 > 前一期
-        trend_score = curr_yoy - prev_yoy
-        improving = trend_score > 0
+        # 条件1：连续改善 y1 < y2 < y3
+        if not (y2 > y1 and y3 > y2):
+            return False, 0
 
-        return improving, trend_score
+        # 条件2：改善幅度≥2pp
+        trend_score = y3 - y1
+        if trend_score < 0.02:
+            return False, 0
+
+        # 条件3：当前绝对利润不低于8Q均值的80%（过滤"改善但仍在深渊"）
+        all_profits = []
+        for _, row in available.tail(8).iterrows():
+            p = _parse_pct(row.get("净利润"))
+            if p is not None:
+                all_profits.append(p)
+        if all_profits and len(all_profits) >= 4:
+            avg_8q = sum(all_profits) / len(all_profits)
+            if profit_values and avg_8q > 0 and profit_values[-1] < avg_8q * 0.8:
+                return False, 0
+
+        return True, trend_score
         """获取某只股票在指定日期的收盘价"""
         df = self._klines.get(code)
         if df is None or df.empty:
@@ -551,12 +572,17 @@ class BacktestEngine:
                 self._sell(code, price, pos.quantity, dt, f"硬止损 {pnl:.1%}")
                 continue
 
-            # 时间止损（最短持有期后）
+            # 跌破200日均线+亏损>10%（替代时间止损，减少凌迟式砍仓）
             hold_min_days = self.dv.get("hold_min_months", 6) * 30
-            if held_days >= hold_min_days and held_days > self.stops["time_stop_months"] * 30 and pnl <= 0:
-                cut_qty = int(pos.quantity * self.stops["time_stop_cut_ratio"] / 100) * 100
-                if cut_qty > 0:
-                    self._sell(code, price, cut_qty, dt, f"时间止损 {held_days}天")
+            if held_days >= hold_min_days and pnl < -0.10 and code in self._klines:
+                kline = self._klines[code]
+                kline.index = pd.to_datetime(kline.index)
+                subset = kline[kline.index <= date_str]["收盘"]
+                if len(subset) >= 200:
+                    ma200 = float(subset.rolling(200).mean().iloc[-1])
+                    if price < ma200:
+                        self._sell(code, price, pos.quantity, dt,
+                                  f"跌破MA200+亏损{pnl:.1%}")
 
             # 移动止盈
             if pnl >= self.tp["trail_trigger"] and code in self._klines:
@@ -631,6 +657,18 @@ class BacktestEngine:
         price = self._get_price_on_date(code, date_str)
         if price is None or price <= 0:
             return False
+
+        # 轻量估值门：不买52周最高点附近（>90%分位）
+        if self.mode == "trend_reversal":
+            kline = self._klines.get(code)
+            if kline is not None and not kline.empty:
+                k = kline.copy()
+                k.index = pd.to_datetime(k.index)
+                sub = k[k.index <= date_str]
+                if len(sub) >= 250:
+                    high_52w = float(sub["最高"].tail(250).max())
+                    if high_52w > 0 and price > high_52w * 0.90:
+                        return False  # 接近52周高点，不追
 
         # 计算买入数量
         batch_cfg = self.dv["batch_entry"]
