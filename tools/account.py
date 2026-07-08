@@ -113,14 +113,16 @@ class VirtualAccount:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         os.replace(tmp, self._file_path)
-        # 仅主账户同步交易CSV
-        if self._file_path == ACCOUNT_FILE:
-            self._save_trades_csv()
+        self._save_trades_csv()
 
     def _save_trades_csv(self):
-        """同步交易记录到 CSV"""
+        """同步交易记录到 CSV，路径从账户文件名派生"""
         import csv
-        with open(TRADES_CSV, "w", encoding="utf-8", newline="") as f:
+        # account.json -> trades.csv, account_trend.json -> trades_trend.csv
+        base = os.path.splitext(os.path.basename(self._file_path))[0]  # "account" or "account_trend"
+        csv_name = base.replace("account", "trades") + ".csv"
+        csv_path = os.path.join(os.path.dirname(self._file_path), csv_name)
+        with open(csv_path, "w", encoding="utf-8", newline="") as f:
             w = csv.writer(f)
             w.writerow(["time", "code", "name", "direction", "price", "quantity", "amount", "pnl", "reason"])
             for t in self.state.trades:
