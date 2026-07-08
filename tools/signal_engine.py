@@ -84,15 +84,15 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
             ))
             continue
 
-        # --- 时间止损（最短持有期内跳过）---
-        if held_days >= hold_min_days and held_days > stops["time_stop_months"] * 30 and pnl_pct <= 0:
-            cut_qty = int(pos.quantity * stops["time_stop_cut_ratio"] / 100) * 100
-            if cut_qty > 0:
+        # --- 跌破MA200+亏损>10%（替代旧版时间止损，减少凌迟式砍仓）---
+        if held_days >= hold_min_days and pnl_pct < -0.10:
+            ma200 = float(kline["收盘"].rolling(200).mean().iloc[-1])
+            if current_price < ma200:
                 signals.append(Signal(
                     type="SELL", code=code, name=pos.name, strategy=pos.strategy,
-                    action=f"时间止损：卖出 {cut_qty}股",
-                    reason=f"持仓{held_days}天无利润，砍{stops['time_stop_cut_ratio']:.0%}仓位",
-                    price=current_price, quantity=cut_qty, urgency="urgent",
+                    action=f"MA200止损：全部卖出 {pos.quantity}股",
+                    reason=f"跌破200日均线{ma200:.2f}，亏损{pnl_pct:.1%}",
+                    price=current_price, quantity=pos.quantity, urgency="urgent",
                 ))
 
         # --- 移动止盈 ---
@@ -110,26 +110,26 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                 continue
 
         # --- 基本面恶化 ---
-        # 只在财报季（4月、8月、10月）检查
+        # 财报发布月检查（4月=年报+Q1, 8月=半年, 10月=Q3, 11月=Q3延迟）
         today = date.today()
-        if today.month in [4, 8, 10]:
+        if today.month in [4, 5, 8, 9, 10, 11]:
             fin = fetch_financial_indicators(code)
             if fin:
-                revenue_growth = _get_yoy_growth(fin, "营业收入")
-                profit_growth = _get_yoy_growth(fin, "净利润")
-                if revenue_growth is not None and revenue_growth <= stops["fundamental_stop_revenue"]:
+                profit_yoy = fin.get("profit_yoy")  # 已是最新报告期的YoY
+                rev_yoy = fin.get("revenue_yoy")
+                if rev_yoy is not None and rev_yoy <= stops["fundamental_stop_revenue"]:
                     signals.append(Signal(
                         type="SELL", code=code, name=pos.name, strategy=pos.strategy,
                         action=f"基本面止损：全部卖出",
-                        reason=f"营收同比{revenue_growth:.1%}，触及{stops['fundamental_stop_revenue']:.0%}",
+                        reason=f"营收同比{rev_yoy*100:.1f}%，触及{stops['fundamental_stop_revenue']:.0%}",
                         price=current_price, quantity=pos.quantity, urgency="urgent",
                     ))
                     continue
-                elif profit_growth is not None and profit_growth <= stops["fundamental_stop_profit"]:
+                elif profit_yoy is not None and profit_yoy <= stops["fundamental_stop_profit"]:
                     signals.append(Signal(
                         type="SELL", code=code, name=pos.name, strategy=pos.strategy,
                         action=f"基本面止损：全部卖出",
-                        reason=f"利润同比{profit_growth:.1%}，触及{stops['fundamental_stop_profit']:.0%}",
+                        reason=f"利润同比{profit_yoy*100:.1f}%，触及{stops['fundamental_stop_profit']:.0%}",
                         price=current_price, quantity=pos.quantity, urgency="urgent",
                     ))
                     continue
