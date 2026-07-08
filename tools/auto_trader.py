@@ -335,8 +335,57 @@ def daily_update() -> str:
     days_stale = (today - datetime.strptime(data_date, "%Y-%m-%d").date()).days if data_date != "未知" else 99
     stale_warn = " [警告] 数据过期!" if days_stale > 3 else ""
 
+    # 4.1 基准对比：沪深300指数价格
+    bm_price = 0.0
+    bm_cache_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
+    try:
+        import akshare as ak
+        bm_df = ak.stock_zh_index_daily_em(symbol="sh000300")
+        if bm_df is not None and not bm_df.empty:
+            bm_df.columns = [c.lower() for c in bm_df.columns]
+            bm_price = float(bm_df["close"].iloc[-1])
+            bm_cache_file.parent.mkdir(parents=True, exist_ok=True)
+            bm_df.to_csv(bm_cache_file, encoding="utf-8")
+    except Exception:
+        if bm_cache_file.exists():
+            try:
+                import pandas as pd
+                # 兼容两种缓存格式：date为索引 vs date为列
+                bm_cache = pd.read_csv(bm_cache_file)
+                if "close" in bm_cache.columns:
+                    bm_price = float(bm_cache["close"].iloc[-1])
+                elif "收盘" in bm_cache.columns:
+                    bm_price = float(bm_cache["收盘"].iloc[-1])
+                elif bm_cache.shape[1] >= 5:
+                    # 可能date在首列，close在第4列
+                    bm_cache = pd.read_csv(bm_cache_file, index_col=0)
+                    if "close" in bm_cache.columns:
+                        bm_price = float(bm_cache["close"].iloc[-1])
+            except Exception:
+                pass
+    initial_cash = _load_config()["account"]["initial_cash"]
+    total_ret = (acc.state.total_value / initial_cash) - 1
+
+    # 从performance.csv取首次记录的基准价
+    perf_file = OUTPUT_DIR / "performance.csv"
+    initial_bm = bm_price
+    if perf_file.exists():
+        try:
+            import pandas as pd
+            perf_df = pd.read_csv(perf_file)
+            if not perf_df.empty:
+                initial_bm = perf_df["benchmark_price"].iloc[0]
+        except Exception:
+            pass
+    bm_ret = (bm_price / initial_bm) - 1 if initial_bm > 0 else 0
+    alpha = total_ret - bm_ret
+
     lines.append(f"\n总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
+    lines.append(f"策略成立以来: {total_ret:+.2%} | 同期沪深300: {bm_ret:+.2%} | 超额: {alpha:+.2%}")
     lines.append(f"数据日期: {data_date}（{days_stale}天前）{stale_warn}")
+
+    # 4.2 持久化表现日志
+    _save_performance_log(acc, bm_price)
 
     # 5. 保存持仓快照到 CSV
     _save_holdings_snapshot(acc)
@@ -367,10 +416,83 @@ def daily_update() -> str:
         quick = today.weekday() != 4
         run_full_screening(n=30, quick=quick)
         lines.append(f"\n[候选池] 已刷新（{'快速' if quick else '全量'}模式）")
+
+        # 候选池摘要
+        held = set(acc.get_holding_codes())
+        try:
+            import pandas as pd
+            dv_df = pd.read_csv(OUTPUT_DIR / "candidates.csv")
+            dv_new = [f"{r['code']} {r['name']}" for _, r in dv_df.iterrows()
+                      if str(r['code']).zfill(6) not in held]
+            if dv_new:
+                lines.append(f"[深价候选] 新票: {', '.join(dv_new[:5])}")
+
+            trend_file = OUTPUT_DIR / "trend_candidates.csv"
+            if trend_file.exists():
+                tr_df = pd.read_csv(trend_file)
+                tr_new = [f"{r['code']} {r['name']}" for _, r in tr_df.iterrows()
+                          if str(r['code']).zfill(6) not in held]
+                if tr_new:
+                    lines.append(f"[趋势候选] 新票: {', '.join(tr_new[:5])}")
+                both = [f"{r['code']} {r['name']}" for _, r in tr_df.iterrows()
+                        if str(r['code']).zfill(6) in held]
+                if both:
+                    lines.append(f"[趋势交叉] 已持有: {', '.join(both)}")
+        except Exception:
+            pass
     except Exception as e:
         lines.append(f"\n[候选池] 刷新失败: {e}")
 
     return "\n".join(lines)
+
+
+def _save_performance_log(acc: VirtualAccount, bm_price: float):
+    """保存每日表现日志（含基准对比）"""
+    path = OUTPUT_DIR / "performance.csv"
+    today_str = date.today().isoformat()
+    initial = _load_config()["account"]["initial_cash"]
+
+    rows = []
+    initial_bm = bm_price
+    if path.exists():
+        try:
+            import pandas as pd
+            existing = pd.read_csv(path)
+            rows = existing.to_dict("records")
+            if rows:
+                initial_bm = rows[0]["benchmark_price"]
+        except Exception:
+            pass
+
+    total_ret = (acc.state.total_value / initial) - 1
+    bm_ret = (bm_price / initial_bm) - 1 if initial_bm > 0 else 0
+
+    # 同一天覆盖
+    if rows and rows[-1].get("date") == today_str:
+        rows[-1] = {
+            "date": today_str,
+            "portfolio_value": round(acc.state.total_value, 2),
+            "benchmark_price": round(bm_price, 2),
+            "portfolio_return": round(total_ret, 4),
+            "benchmark_return": round(bm_ret, 4),
+            "alpha": round(total_ret - bm_ret, 4),
+            "positions": acc.state.position_count,
+            "cash_pct": round(acc.state.cash / acc.state.total_value * 100, 1) if acc.state.total_value > 0 else 100,
+        }
+    else:
+        rows.append({
+            "date": today_str,
+            "portfolio_value": round(acc.state.total_value, 2),
+            "benchmark_price": round(bm_price, 2),
+            "portfolio_return": round(total_ret, 4),
+            "benchmark_return": round(bm_ret, 4),
+            "alpha": round(total_ret - bm_ret, 4),
+            "positions": acc.state.position_count,
+            "cash_pct": round(acc.state.cash / acc.state.total_value * 100, 1) if acc.state.total_value > 0 else 100,
+        })
+
+    import pandas as pd
+    pd.DataFrame(rows).to_csv(path, index=False, encoding="utf-8")
 
 
 def _save_holdings_snapshot(acc: VirtualAccount):
