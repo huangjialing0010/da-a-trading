@@ -137,6 +137,13 @@
       "cash": 621267.0,
       "market_value": 386936.0,
       "position_count": 3
+    },
+    {
+      "date": "2026-07-09",
+      "total_value": 1008203.0,
+      "cash": 621267.0,
+      "market_value": 386936.0,
+      "position_count": 3
     }
   ],
   "created_at": "2026-06-26T11:15:59.974251"

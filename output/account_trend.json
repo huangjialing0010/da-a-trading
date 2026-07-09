@@ -1,10 +1,10 @@
 {
-  "cash": 519053.0,
+  "cash": 845690.0,
   "positions": {
     "000807": {
       "code": "000807",
       "name": "云铝股份",
-      "quantity": 8900,
+      "quantity": 17800,
       "avg_cost": 22.39,
       "current_price": 22.32,
       "strategy": "trend_reversal"
@@ -12,7 +12,7 @@
     "000657": {
       "code": "000657",
       "name": "中钨高新",
-      "quantity": 2000,
+      "quantity": 3900,
       "avg_cost": 76.84,
       "current_price": 73.95,
       "strategy": "trend_reversal"
@@ -20,52 +20,77 @@
     "002558": {
       "code": "002558",
       "name": "巨人网络",
-      "quantity": 4400,
+      "quantity": 8800,
       "avg_cost": 29.09,
       "current_price": 28.0,
+      "strategy": "trend_reversal"
+    },
+    "002493": {
+      "code": "002493",
+      "name": "荣盛石化",
+      "quantity": 17400,
+      "avg_cost": 11.5,
+      "current_price": 11.14,
       "strategy": "trend_reversal"
     }
   },
   "trades": [
     {
-      "time": "2026-07-08T12:43:51.360412",
+      "time": "2026-07-08T15:04:35.773695",
       "code": "000807",
       "name": "云铝股份",
       "direction": "BUY",
       "price": 22.39,
-      "quantity": 8900,
-      "reason": "趋势入场: 利润改善+285.7pp, ROE=10.6%",
+      "quantity": 17800,
+      "reason": "趋势入场: 200万初始资金重建",
       "pnl": 0.0
     },
     {
-      "time": "2026-07-08T12:43:51.362152",
+      "time": "2026-07-08T15:04:35.775029",
       "code": "000657",
       "name": "中钨高新",
       "direction": "BUY",
       "price": 76.84,
-      "quantity": 2000,
-      "reason": "趋势入场: 利润改善+246.4pp, ROE=9.0%",
+      "quantity": 3900,
+      "reason": "趋势入场: 200万初始资金重建",
       "pnl": 0.0
     },
     {
-      "time": "2026-07-08T12:43:51.363246",
+      "time": "2026-07-08T15:04:35.776209",
       "code": "002558",
       "name": "巨人网络",
       "direction": "BUY",
       "price": 29.09,
-      "quantity": 4400,
-      "reason": "趋势入场: 利润改善+211.9pp, ROE=6.8%",
+      "quantity": 8800,
+      "reason": "趋势入场: 200万初始资金重建",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-07-08T15:04:35.777353",
+      "code": "002493",
+      "name": "荣盛石化",
+      "direction": "BUY",
+      "price": 11.5,
+      "quantity": 17400,
+      "reason": "趋势入场: 200万初始资金重建",
       "pnl": 0.0
     }
   ],
   "equity_snapshots": [
     {
       "date": "2026-07-08",
-      "total_value": 988801.0,
-      "cash": 519053.0,
-      "market_value": 469748.0,
-      "position_count": 3
+      "total_value": 2000000.0,
+      "cash": 845690.0,
+      "market_value": 1154310.0,
+      "position_count": 4
+    },
+    {
+      "date": "2026-07-09",
+      "total_value": 1971627.0,
+      "cash": 845690.0,
+      "market_value": 1125937.0,
+      "position_count": 4
     }
   ],
-  "created_at": "2026-07-08T12:43:51.325127"
+  "created_at": "2026-07-08T15:04:35.770491"
 }

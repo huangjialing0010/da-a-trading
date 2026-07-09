@@ -26,9 +26,10 @@ python -c "from tools.backtest import BacktestEngine; bt = BacktestEngine(mode='
 
 | | 深价主仓 | 趋势虚拟仓 |
 |------|----------|------------|
+| 资金 | 100万 | 200万（纸上） |
 | 策略 | 跌40%+财务好，人工买入 | 利润趋势改善+质量过滤，自动执行 |
 | 候选池 | `candidates.csv` | `trend_candidates.csv` |
-| 状态 | 实盘，你的真钱 | 纸上测试，仅供观察 |
+| 状态 | 实盘，冻结新买入等ERP>5% | 纸上测试，回测+79%超额+13% |
 
 ## 筛选流程
 

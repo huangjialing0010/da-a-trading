@@ -20,6 +20,7 @@ from .account import VirtualAccount, Position
 from .data_fetcher import fetch_daily_kline, fetch_financial_data, fetch_market_water_level
 from .signal_engine import check_monitor
 from .industry_analyzer import get_stock_industry
+from .commodity_fetcher import check_commodity_cycle
 
 BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
@@ -205,8 +206,8 @@ def trend_daily_update() -> str:
                 continue  # 改善幅度太小
             if roe < 6:
                 continue
-            if debt > 60:
-                continue
+            # 负债率不单独过滤——回测表明高负债重资产公司恰是趋势改善的主要来源
+            # ROE>6% + 利润改善 + MA200退出已足够做质量过滤
             if cur_yoy < -20:
                 continue  # 仍在恶化
 
@@ -218,6 +219,11 @@ def trend_daily_update() -> str:
             high_52w = float(kline["最高"].tail(250).max())
             if high_52w > 0 and price_now > high_52w * 0.90:
                 continue  # 太接近52周高点
+
+            # 商品周期检查：周期顶部不自动入场
+            cycle = check_commodity_cycle(str(r["name"]))
+            if cycle and cycle["penalty"] > 0:
+                continue  # 商品周期高位，利润改善可能是周期驱动
 
             viable.append({
                 "code": code, "name": str(r["name"]),
@@ -265,8 +271,11 @@ def trend_daily_update() -> str:
             except Exception:
                 pass
 
-    initial_cash = 1_000_000
-    total_ret = (acc.state.total_value / initial_cash) - 1
+    # 反推初始资金：现金 + 累计买入 - 累计卖出
+    buy_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "BUY")
+    sell_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "SELL")
+    initial_cash = acc.state.cash + buy_total - sell_total
+    total_ret = (acc.state.total_value / initial_cash) - 1 if initial_cash > 0 else 0
 
     initial_bm = bm_price
     if TREND_PERF_FILE.exists():
@@ -303,6 +312,127 @@ def trend_daily_update() -> str:
 
     return "\n".join(lines)
 
+
+def _market_monitor() -> list[str]:
+    """市场水位监控 — 每日自动检查关键阈值，独立于策略信号"""
+    import pandas as pd
+    warnings = []
+
+    bm_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
+    margin_file = BASE_DIR / "data" / "market" / "margin.json"
+    pe_file = BASE_DIR / "data" / "market" / "index_pe.json"
+    bond_file = BASE_DIR / "data" / "market" / "bond_yield.json"
+
+    # 1. CSI 300 关键支撑位
+    try:
+        bm = pd.read_csv(bm_file)
+        bm = bm.dropna(subset=["close"])
+        if len(bm) >= 2:
+            close = float(bm["close"].iloc[-1])
+            prev = float(bm["close"].iloc[-2])
+            low_6m = float(bm["close"].tail(120).min())
+
+            warnings.append(f"CSI 300: {close:,.0f} (日涨跌 {close-prev:+.0f})")
+
+            # 关键支撑距离
+            support_4714 = (close / 4714 - 1) * 100
+            support_4500 = (close / 4500 - 1) * 100
+            if close <= 4714:
+                warnings.append(f"⚠️ 跌破6月低点4,714！下一支撑4,500（距{support_4500:+.1f}%）")
+            elif support_4714 < 2:
+                warnings.append(f"⚠️ 距6月低点4,714仅{support_4714:+.1f}%，密切关注")
+            elif support_4714 < 5:
+                warnings.append(f"距6月低点4,714还有{support_4714:+.1f}%")
+
+            # 6个月低点
+            warnings.append(f"6个月区间: {low_6m:,.0f} - {float(bm['close'].tail(120).max()):,.0f}")
+    except Exception as e:
+        warnings.append(f"[监控] CSI 300读取失败: {e}")
+
+    # 2. 两融余额
+    try:
+        if margin_file.exists():
+            with open(margin_file, "r", encoding="utf-8") as f:
+                margin = json.load(f)
+            mb = margin.get("margin_balance", 0) / 1e12  # 转万亿
+            if mb > 0:
+                warnings.append(f"两融余额: {mb:.2f}万亿")
+                if mb < 2.9:
+                    warnings.append(f"⚠️ 两融<2.9万亿，杠杆资金系统性撤离")
+                elif mb < 2.95:
+                    warnings.append(f"⚠️ 两融偏低({mb:.2f}万亿)，注意趋势")
+    except Exception:
+        pass
+
+    # 3. PE + ERP
+    try:
+        if pe_file.exists() and bond_file.exists():
+            with open(pe_file, "r", encoding="utf-8") as f:
+                pe_data = json.load(f)
+            with open(bond_file, "r", encoding="utf-8") as f:
+                bond_data = json.load(f)
+            pe = pe_data.get("hs300_pe", 0)
+            y10 = bond_data.get("yield_10y", 0)
+            if pe > 0 and y10 > 0:
+                erp = (1 / pe) - y10
+                warnings.append(f"PE: {pe:.2f} | 10Y: {y10:.2%} | ERP: {erp:.2%}")
+                if erp > 0.05:
+                    warnings.append(f"✓ ERP>5%，深度价值区域")
+                elif erp < 0.03:
+                    warnings.append(f"⚠️ ERP<3%，市场偏贵")
+    except Exception:
+        pass
+
+    # 4. 行业结构 — PE极端值 + 领涨/领跌
+    try:
+        sw_file = BASE_DIR / "data" / "market" / "sw_level1.csv"
+        if sw_file.exists():
+            sw = pd.read_csv(sw_file)
+            # PE极端行业
+            pe_data = []
+            for _, row in sw.iterrows():
+                pe_val = row.get("静态市盈率", None)
+                name = row.get("行业名称", "")
+                if pe_val and float(pe_val) > 0 and name:
+                    pe_data.append((name, float(pe_val)))
+            pe_data.sort(key=lambda x: x[1])
+            cheapest = pe_data[:3]
+            dearest = pe_data[-3:]
+            warnings.append(f"最便宜: {' | '.join(f'{n} PE{p:.1f}' for n,p in cheapest)}")
+            warnings.append(f"最贵: {' | '.join(f'{n} PE{p:.1f}' for n,p in dearest)}")
+
+            # 行业健康分排名（仅在已缓存的session内可用，避免网络调用）
+            try:
+                from .industry_analyzer import _industry_scores_cache
+                if _industry_scores_cache is not None:
+                    # 按20日涨跌幅排序：领涨 = 涨最多，领跌 = 跌最多
+                    by_perf = sorted(_industry_scores_cache.values(),
+                                     key=lambda x: x.get("perf_20d", 0), reverse=True)
+                    leaders = by_perf[:3]
+                    laggards = by_perf[-3:]
+                    lead_str = " | ".join(
+                        "{} {:+.1f}%".format(s["level1_name"], s.get("perf_20d", 0) * 100)
+                        for s in leaders
+                    )
+                    lag_str = " | ".join(
+                        "{} {:+.1f}%".format(s["level1_name"], s.get("perf_20d", 0) * 100)
+                        for s in laggards
+                    )
+                    warnings.append("20日领涨: " + lead_str)
+                    warnings.append("20日领跌: " + lag_str)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 5. 关键事件窗口提醒（日期驱动）
+    today = date.today()
+    if today >= date(2026, 7, 15) and today <= date(2026, 8, 31):
+        warnings.append("📋 二季报披露窗口（7月中-8月底），关注盈利验证")
+    if today >= date(2026, 7, 20) and today <= date(2026, 7, 31):
+        warnings.append("🏛️ 政治局会议临近（7月底），定调下半年政策")
+
+    return warnings
 
 def daily_update() -> str:
     socket.setdefaulttimeout(15)  # 所有网络调用15秒超时, 防止akshare API卡死
@@ -648,6 +778,12 @@ def daily_update() -> str:
             pass
     except Exception as e:
         lines.append(f"\n[候选池] 刷新失败: {e}")
+
+    # 8.5 市场水位监控（放在筛选之后，可以拿到行业健康分缓存）
+    market = _market_monitor()
+    lines.append(f"\n═══ 市场水位 ═══")
+    for m in market:
+        lines.append(f"  {m}")
 
     # 9. 趋势策略虚拟仓（纸上测试，非实盘！！！）
     try:

@@ -91,6 +91,9 @@ class BacktestEngine:
         self.dv = self.config["deep_value"]
         self.stops = self.config["stops"]
         self.tp = self.config["take_profit"]
+        self.trend_max_debt = float(
+            config_overrides.get("trend_max_debt_ratio", 60)
+        ) if config_overrides else 60.0
 
         # 状态
         self.positions: dict[str, BTPosition] = {}
@@ -644,7 +647,7 @@ class BacktestEngine:
     def _execute_entry(self, code, date_str) -> bool:
         """执行入场。返回 True=成功买入，False=跳过（财务/趋势/价格不满足）"""
         # 按入场日期检查当时可获得的财务数据（消除前视偏差）
-        fin_score, fin_flags, _ = self._fin_check_at_date(code, date_str)
+        fin_score, fin_flags, metrics = self._fin_check_at_date(code, date_str)
         if fin_score < 0:
             return False
 
