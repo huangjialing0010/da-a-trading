@@ -40,6 +40,52 @@ def _get_kline(code: str, ttl_days: int = 1) -> "pd.DataFrame":
     return _kline_cache[code]
 
 
+def _display_width(s: str) -> int:
+    """字符串显示宽度，CJK字符占2格。"""
+    import unicodedata
+    w = 0
+    for c in str(s):
+        w += 2 if unicodedata.east_asian_width(c) in ("W", "F") else 1
+    return w
+
+
+def _pad_str(s: str, width: int) -> str:
+    """将字符串填充到指定显示宽度（左对齐）。"""
+    need = width - _display_width(s)
+    return s + " " * max(need, 0)
+
+
+def _format_table(headers: list[str], rows: list[list]) -> str:
+    """生成对齐文本表格。CJK字符占2格，全部左对齐。"""
+    if not rows:
+        return ""
+
+    # 自动计算列宽（取表头和数据最大值，+2留白）
+    col_widths = []
+    for ci, h in enumerate(headers):
+        max_w = _display_width(str(h))
+        for row in rows:
+            if ci < len(row):
+                max_w = max(max_w, _display_width(str(row[ci])))
+        col_widths.append(max_w + 2)
+
+    # 行分隔符和行内分隔
+    GAP = "  "
+
+    lines = []
+    # 表头
+    lines.append(GAP + GAP.join(_pad_str(str(h), col_widths[ci]) for ci, h in enumerate(headers)))
+    # 分隔线
+    lines.append(GAP + GAP.join("─" * w for w in col_widths))
+    # 数据行
+    for row in rows:
+        cells = [_pad_str(str(row[ci]) if ci < len(row) else "", col_widths[ci])
+                 for ci in range(len(headers))]
+        lines.append(GAP + GAP.join(cells))
+
+    return "\n".join(lines)
+
+
 def _load_batch_state() -> dict:
     if BATCH_STATE_FILE.exists():
         with open(BATCH_STATE_FILE, "r", encoding="utf-8") as f:
@@ -131,6 +177,7 @@ def trend_daily_update() -> str:
     candidates = pd.read_csv(trend_file)
 
     # ── 1. 更新持仓价格 ──
+    tr_rows = []
     for pos in acc.get_holdings():
         kline = fetch_daily_kline(pos.code, ttl_days=0)
         if kline.empty:
@@ -138,8 +185,11 @@ def trend_daily_update() -> str:
         new_price = float(kline.iloc[-1]["收盘"])
         old_price = pos.current_price
         acc.update_price(pos.code, new_price)
-        chg = (new_price / old_price - 1) if old_price > 0 else 0
-        lines.append(f"  [{pos.name}] {old_price:.2f} -> {new_price:.2f} ({chg:+.2%})")
+        pnl = (new_price / pos.avg_cost - 1) if pos.avg_cost > 0 else 0
+        mkt_val = new_price * pos.quantity
+        tr_rows.append([pos.code, pos.name, f"{pos.quantity:,}",
+                        f"{pos.avg_cost:.2f}", f"{new_price:.2f}",
+                        f"{mkt_val:,.0f}", f"{pnl:+.1%}", pos.strategy or "trend_reversal"])
 
     # ── 2. 退出检查（复用主仓规则：硬止损/MA200/移动止盈/到期）──
     cfg = _load_config()
@@ -287,7 +337,11 @@ def trend_daily_update() -> str:
             pass
     bm_ret = (bm_price / initial_bm) - 1 if initial_bm > 0 else 0
 
-    lines.append(f"  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
+    if tr_rows:
+        lines.append(_format_table(
+            ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "策略"],
+            tr_rows))
+    lines.append(f"\n  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
     lines.append(f"  成立以来: {total_ret:+.2%} | 沪深300: {bm_ret:+.2%} | 超额: {total_ret - bm_ret:+.2%}")
 
     # 持久化表现
@@ -462,7 +516,9 @@ def daily_update() -> str:
     for c in stale:
         del batch_state[c]
 
-    # 1. 更新持仓价格
+    # 1. 更新持仓价格（收集数据用于表格输出）
+    dv_rows = []
+    latest_date = ""
     for pos in acc.get_holdings():
         kline = _get_kline(pos.code, ttl_days=0)
         if kline.empty:
@@ -476,8 +532,11 @@ def daily_update() -> str:
         old_price = pos.current_price
         acc.update_price(pos.code, new_price)
 
-        chg = (new_price / old_price - 1) if old_price > 0 else 0
-        lines.append(f"[{pos.name}] {old_price:.2f} -> {new_price:.2f} ({chg:+.2%}) | {latest_date}")
+        pnl = (new_price / pos.avg_cost - 1) if pos.avg_cost > 0 else 0
+        mkt_val = new_price * pos.quantity
+        dv_rows.append([pos.code, pos.name, f"{pos.quantity:,}",
+                        f"{pos.avg_cost:.2f}", f"{new_price:.2f}",
+                        f"{mkt_val:,.0f}", f"{pnl:+.1%}", pos.strategy or "deep_value"])
 
     acc._save()  # 价格更新立即持久化
 
@@ -712,9 +771,13 @@ def daily_update() -> str:
     alpha = total_ret - bm_ret
 
     lines.append(f"\n═══ 深价主仓 ═══")
-    lines.append(f"总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
-    lines.append(f"策略成立以来: {total_ret:+.2%} | 同期沪深300: {bm_ret:+.2%} | 超额: {alpha:+.2%}")
-    lines.append(f"数据日期: {data_date}（{days_stale}天前）{stale_warn}")
+    if dv_rows:
+        lines.append(_format_table(
+            ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "策略"],
+            dv_rows))
+    lines.append(f"\n  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
+    lines.append(f"  成立以来: {total_ret:+.2%} | 沪深300: {bm_ret:+.2%} | 超额: {alpha:+.2%}")
+    lines.append(f"  数据日期: {data_date}（{days_stale}天前）{stale_warn}")
 
     # 4.2 持久化表现日志
     _save_performance_log(acc, bm_price)

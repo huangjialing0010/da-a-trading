@@ -32,7 +32,7 @@ import pandas as pd
 from tools.account import VirtualAccount
 from tools.signal_engine import generate_signals, check_monitor
 from tools.screener import run_full_screening, load_candidates
-from tools.reporter import daily_report, weekly_report, show_trade_log
+from tools.reporter import weekly_report, show_trade_log
 from tools.review import weekly_review, monthly_review
 from tools.data_fetcher import fetch_current_price
 
@@ -71,19 +71,9 @@ def cmd_status(_args=None):
 
 
 def cmd_daily(_args=None):
-    acc = VirtualAccount()
-    if acc.state.cash == 0 and acc.state.position_count == 0:
-        print("账户未初始化，请先运行: python main.py init [金额]")
-        return
-
-    # 先更新持仓价格
-    for pos in acc.get_holdings():
-        price = fetch_current_price(pos.code)
-        if price:
-            acc.update_price(pos.code, price)
-
-    acc.record_snapshot()
-    daily_report(acc)
+    """日报：深价主仓 + 趋势虚拟仓 + 候选池 + 市场水位"""
+    from tools.auto_trader import daily_update
+    print(daily_update())
 
 
 def cmd_weekly(_args=None):
