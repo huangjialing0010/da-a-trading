@@ -842,6 +842,15 @@ def daily_update() -> str:
     except Exception as e:
         lines.append(f"\n[候选池] 刷新失败: {e}")
 
+    # 8.4 候选池假设性买入追踪
+    try:
+        from .candidate_tracker import update_candidate_tracker
+        tracker_text = update_candidate_tracker()
+        if tracker_text:
+            lines.append(tracker_text)
+    except Exception as e:
+        lines.append(f"\n[候选追踪] 失败: {e}")
+
     # 8.5 市场水位监控（放在筛选之后，可以拿到行业健康分缓存）
     market = _market_monitor()
     lines.append(f"\n═══ 市场水位 ═══")

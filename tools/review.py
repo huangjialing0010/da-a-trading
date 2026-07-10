@@ -124,6 +124,21 @@ def weekly_review(acc: VirtualAccount = None) -> str:
         lines.append("无候选")
     lines.append("")
 
+    # 候选池追踪
+    try:
+        from .candidate_tracker import tracker_summary_for_review
+        dv_track, _ = tracker_summary_for_review()
+        if dv_track:
+            lines.append("## 四.五、候选池假设性表现")
+            lines.append("")
+            lines.append("| 代码 | 名称 | 持有天数 | 入场价 | 现价 | 假设盈亏 |")
+            lines.append("|------|------|----------|--------|------|----------|")
+            for tl in dv_track:
+                lines.append(tl)
+            lines.append("")
+    except Exception:
+        pass
+
     # 五、市场水位
     lines.append("## 五、市场水位")
     lines.append("")
@@ -412,6 +427,21 @@ def trend_weekly_review() -> str:
     else:
         lines.append("无候选数据")
     lines.append("")
+
+    # 候选池追踪
+    try:
+        from .candidate_tracker import tracker_summary_for_review
+        _, tr_track = tracker_summary_for_review()
+        if tr_track:
+            lines.append("## 四.五、趋势候选假设性表现")
+            lines.append("")
+            lines.append("| 代码 | 名称 | 持有天数 | 入场价 | 现价 | 假设盈亏 |")
+            lines.append("|------|------|----------|--------|------|----------|")
+            for tl in tr_track:
+                lines.append(tl)
+            lines.append("")
+    except Exception:
+        pass
 
     report = "\n".join(lines)
 
