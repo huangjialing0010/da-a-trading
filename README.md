@@ -12,8 +12,8 @@ pip install akshare pandas numpy pyyaml
 # 查看账户
 python main.py status
 
-# 日更（价格刷新 + 信号检查 + 候选池更新 + 趋势虚拟仓）
-python -c "from tools.auto_trader import daily_update; print(daily_update())"
+# 日更（价格刷新 + 信号检查 + 候选池更新 + 候选追踪 + 趋势虚拟仓）
+python main.py daily
 
 # 深价回测
 python -c "from tools.backtest import BacktestEngine; bt = BacktestEngine(mode='deep_value'); bt.load_universe(); bt.load_financials(); bt.run(); print(bt.report())"
@@ -50,4 +50,4 @@ GitHub Actions 工作日 17:30 自动执行日更，结果自动提交回仓库�
 - `CLAUDE.md` — 开发约定 + 完整参数说明
 - `tools/` — 核心模块
 - `.github/workflows/daily.yml` — Actions 日更流水线
-- `output/` — 账户、候选池、交易记录、表现追踪、周报/月报
+- `output/` — 账户、候选池、候选追踪、交易记录、表现追踪、周报/月报

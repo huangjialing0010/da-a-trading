@@ -36,6 +36,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
   - `trades_trend.csv` — 趋势仓交易记录
   - `performance.csv` — 深价仓每日表现vs基准
   - `performance_trend.csv` — 趋势仓每日表现vs基准
+  - `candidate_tracker.csv` — 候选池假设性买入追踪（入场价/现价/盈亏/最大回撤，每日更新）
   - `batch_state.json` — 分批建仓计划（自动维护）
   - `panic_state.json` — 恐慌策略状态（自动维护）
   - `backtest/` — 回测结果
@@ -46,10 +47,11 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
   - `data_fetcher.py` — 数据获取（akshare + 本地缓存，财务数据混合口径：ROE/CF/EPS用年报、利润/营收YoY用最新报告期）
   - `screener.py` — 选股筛选（深价+趋势改善双扫描，并行K线拉取）
   - `signal_engine.py` — 信号生成（MA200止损替代旧版时间止损，基本面检查直接用profit_yoy）
-  - `auto_trader.py` — 自动交易引擎（深价主仓+趋势虚拟仓，含表现追踪+候选摘要）
+  - `auto_trader.py` — 自动交易引擎（深价主仓+趋势虚拟仓，含表现追踪+候选摘要+候选假设性追踪）
   - `industry_analyzer.py` — 行业分析（手工黑名单 + 申万二级量化评分）
   - `industry_data.py` — 申万行业分类（二级131类）+PE/PB
   - `commodity_fetcher.py` — 商品期货周期检测
+  - `candidate_tracker.py` — 候选池假设性买入追踪（从入选到退出的虚拟盈亏闭环）
   - `backtest.py` — 回测引擎（消除前视偏差：财务数据按决策时点+报告延迟取；支持深价/趋势反转双模式）
   - `review.py` — 定期复盘（深价+趋势独立周报/月报）
 - `main.py` — CLI入口
@@ -81,12 +83,19 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 **深价池**：量价初筛（跌幅≥40%+缩量+低价分位）→ 商品周期检测 → 行业过滤 → 财务验证 → `candidates.csv`
 **趋势池**：全池扫描 → 同报告期利润YoY改善排序 → 质量过滤 → `trend_candidates.csv`（研究工具，不入自动交易）
 
+## 候选池追踪（假设性买入）
+- 每只候选从首次入选起记录虚拟买入（入场日期+入场价），每日更新盈亏、最大盈利、最大回撤
+- 退出候选池时自动结算，记录最终收益
+- 数据存 `output/candidate_tracker.csv`，日报和周报均有追踪摘要
+- 目的：闭环验证筛选器有效性，不让候选池"推荐完不管"
+
 ## 开发约定
 - 数据源：akshare（免费）
 - 数据缓存：日K线TTL=1天，财务数据TTL=30天，趋势扫描原始DataFrame缓存30天
 - 财务数据混合口径：ROE/CF/EPS取最新年报（12-31），利润/营收YoY取最新报告期（含季度），资产负债率取最新报告期
 - 选股K线拉取并行化（ThreadPoolExecutor 10线程），K线内存缓存防重复拉取
-- 日更耗时~10秒（本地），GitHub Actions ~60秒（取决于网络）
+- 日更：`python main.py daily`（本地）或 Actions 自动（工作日17:30），本地~10秒，Actions ~60秒
+- 日报输出表格化（`_format_table`，CJK字符宽度感知），6个分区：深价持仓→候选池→候选追踪→市场水位→趋势持仓
 - 容错：所有网络调用加 try/except，失败降级到缓存
 - 参数化：策略阈值统一放 config.yaml
 - git：`data/` 不入库；`output/` 入库存档；每次日更后提交
