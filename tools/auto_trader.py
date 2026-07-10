@@ -865,7 +865,26 @@ def daily_update() -> str:
     except Exception as e:
         lines.append(f"\n[趋势虚拟仓] 失败: {e}")
 
-    return "\n".join(lines)
+    report = "\n".join(lines)
+
+    # 每日日报存档到 reports/
+    try:
+        report_dir = OUTPUT_DIR / "reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        daily_file = report_dir / f"daily_{today.strftime('%Y%m%d')}.md"
+        with open(daily_file, "w", encoding="utf-8") as f:
+            f.write(f"# 日报 — {today.strftime('%Y-%m-%d')}\n\n")
+            f.write("```\n")
+            f.write(report)
+            f.write("\n```\n")
+    except Exception:
+        pass
+
+    return report
+    except Exception:
+        pass
+
+    return report
 
 
 def _save_performance_log(acc: VirtualAccount, bm_price: float):
