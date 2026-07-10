@@ -335,8 +335,11 @@ def trend_weekly_review() -> str:
 
     # 账户概览
     total = acc.state.total_value
-    initial = 1_000_000
-    total_return = total / initial - 1
+    # 从交易记录反推初始资金（避免硬编码）
+    buy_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "BUY")
+    sell_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "SELL")
+    initial = acc.state.cash + buy_total - sell_total
+    total_return = total / initial - 1 if initial > 0 else 0
 
     snaps = acc.state.equity_snapshots
     week_snaps = [s for s in snaps if week_start.isoformat() <= s["date"] <= today.isoformat()]
@@ -437,8 +440,11 @@ def trend_monthly_review() -> str:
     lines.append("")
 
     total = acc.state.total_value
-    initial = 1_000_000
-    total_return = total / initial - 1
+    # 从交易记录反推初始资金（避免硬编码）
+    buy_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "BUY")
+    sell_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "SELL")
+    initial = acc.state.cash + buy_total - sell_total
+    total_return = total / initial - 1 if initial > 0 else 0
 
     snaps = acc.state.equity_snapshots
     month_snaps = [s for s in snaps if s["date"] >= month_start.isoformat()]
