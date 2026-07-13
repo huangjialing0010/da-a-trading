@@ -881,10 +881,6 @@ def daily_update() -> str:
         pass
 
     return report
-    except Exception:
-        pass
-
-    return report
 
 
 def _save_performance_log(acc: VirtualAccount, bm_price: float):
