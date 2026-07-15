@@ -4,7 +4,8 @@ __pycache__/
 *.egg-info/
 
 # 数据缓存（每日重新拉取，不入版本控制）
-data/
+data/*
+!data/market/
 
 # 环境和密钥
 .env
