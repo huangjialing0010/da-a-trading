@@ -1,5 +1,5 @@
 {
-  "cash": 845690.0,
+  "cash": 677610.0,
   "positions": {
     "000807": {
       "code": "000807",
@@ -31,6 +31,14 @@
       "quantity": 17400,
       "avg_cost": 11.5,
       "current_price": 11.1,
+      "strategy": "trend_reversal"
+    },
+    "000858": {
+      "code": "000858",
+      "name": "五 粮 液",
+      "quantity": 2200,
+      "avg_cost": 76.4,
+      "current_price": 76.4,
       "strategy": "trend_reversal"
     }
   },
@@ -74,6 +82,16 @@
       "quantity": 17400,
       "reason": "趋势入场: 200万初始资金重建",
       "pnl": 0.0
+    },
+    {
+      "time": "2026-07-15T11:17:46.861167",
+      "code": "000858",
+      "name": "五 粮 液",
+      "direction": "BUY",
+      "price": 76.4,
+      "quantity": 2200,
+      "reason": "趋势入场: 利润改善+151.1pp, ROE=6.5%",
+      "pnl": 0.0
     }
   ],
   "equity_snapshots": [
@@ -115,9 +133,9 @@
     {
       "date": "2026-07-15",
       "total_value": 2035758.0,
-      "cash": 845690.0,
-      "market_value": 1190068.0,
-      "position_count": 4
+      "cash": 677610.0,
+      "market_value": 1358148.0,
+      "position_count": 5
     }
   ],
   "created_at": "2026-07-08T15:04:35.770491"
