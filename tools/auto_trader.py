@@ -728,31 +728,42 @@ def daily_update() -> str:
     # 4.1 基准对比：沪深300指数价格
     bm_price = 0.0
     bm_cache_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
-    try:
-        import akshare as ak
-        bm_df = ak.stock_zh_index_daily_em(symbol="sh000300")
-        if bm_df is not None and not bm_df.empty:
-            bm_df.columns = [c.lower() for c in bm_df.columns]
-            bm_price = float(bm_df["close"].iloc[-1])
-            bm_cache_file.parent.mkdir(parents=True, exist_ok=True)
-            bm_df.to_csv(bm_cache_file, encoding="utf-8")
-    except Exception:
-        if bm_cache_file.exists():
-            try:
-                import pandas as pd
-                # 兼容两种缓存格式：date为索引 vs date为列
-                bm_cache = pd.read_csv(bm_cache_file)
-                if "close" in bm_cache.columns:
-                    bm_price = float(bm_cache["close"].iloc[-1])
-                elif "收盘" in bm_cache.columns:
-                    bm_price = float(bm_cache["收盘"].iloc[-1])
-                elif bm_cache.shape[1] >= 5:
-                    # 可能date在首列，close在第4列
-                    bm_cache = pd.read_csv(bm_cache_file, index_col=0)
-                    if "close" in bm_cache.columns:
-                        bm_price = float(bm_cache["close"].iloc[-1])
-            except Exception:
-                pass
+
+    def _read_bm_cache():
+        nonlocal bm_price
+        import pandas as pd
+        try:
+            bm_cache = pd.read_csv(bm_cache_file)
+            if len(bm_cache) == 0:
+                return
+            if "close" in bm_cache.columns:
+                bm_price = float(bm_cache["close"].iloc[-1])
+            elif "收盘" in bm_cache.columns:
+                bm_price = float(bm_cache["收盘"].iloc[-1])
+            elif bm_cache.shape[1] >= 3:
+                bm_cache2 = pd.read_csv(bm_cache_file, index_col=0)
+                if "close" in bm_cache2.columns:
+                    bm_price = float(bm_cache2["close"].iloc[-1])
+                elif "收盘" in bm_cache2.columns:
+                    bm_price = float(bm_cache2["收盘"].iloc[-1])
+        except Exception:
+            pass
+
+    import time as _time
+    cache_age = (_time.time() - bm_cache_file.stat().st_mtime) if bm_cache_file.exists() else 999999
+    if cache_age < 86400 and bm_cache_file.exists():
+        _read_bm_cache()
+    if bm_price == 0.0:
+        try:
+            import akshare as ak
+            bm_df = ak.stock_zh_index_daily_em(symbol="sh000300")
+            if bm_df is not None and not bm_df.empty:
+                bm_df.columns = [c.lower() for c in bm_df.columns]
+                bm_price = float(bm_df["close"].iloc[-1])
+                bm_cache_file.parent.mkdir(parents=True, exist_ok=True)
+                bm_df.to_csv(bm_cache_file, encoding="utf-8")
+        except Exception:
+            _read_bm_cache()
     initial_cash = _load_config()["account"]["initial_cash"]
     total_ret = (acc.state.total_value / initial_cash) - 1
 
