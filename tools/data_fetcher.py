@@ -8,6 +8,16 @@ from pathlib import Path
 import pandas as pd
 import akshare as ak
 
+# 强行为所有 requests 调用设超时（15秒），防止 akshare 底层无限挂起
+# socket.setdefaulttimeout 只影响 TCP 连接阶段，不影响 HTTP 读超时
+import requests as _requests
+_original_request = _requests.Session.request
+def _patched_request(self, method, url, **kwargs):
+    if "timeout" not in kwargs:
+        kwargs["timeout"] = 15
+    return _original_request(self, method, url, **kwargs)
+_requests.Session.request = _patched_request
+
 BASE_DIR = Path(__file__).parent.parent
 CACHE_DIR = BASE_DIR / "data"
 KLINE_DIR = CACHE_DIR / "daily_kline"
