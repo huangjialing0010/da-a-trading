@@ -6,7 +6,7 @@
       "name": "云铝股份",
       "quantity": 17800,
       "avg_cost": 22.39,
-      "current_price": 26.02,
+      "current_price": 25.18,
       "strategy": "trend_reversal"
     },
     "002558": {
@@ -14,7 +14,7 @@
       "name": "巨人网络",
       "quantity": 8800,
       "avg_cost": 29.09,
-      "current_price": 29.98,
+      "current_price": 29.87,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -22,7 +22,7 @@
       "name": "荣盛石化",
       "quantity": 17400,
       "avg_cost": 11.5,
-      "current_price": 11.66,
+      "current_price": 11.47,
       "strategy": "trend_reversal"
     },
     "000858": {
@@ -30,7 +30,7 @@
       "name": "五 粮 液",
       "quantity": 2200,
       "avg_cost": 76.4,
-      "current_price": 76.24,
+      "current_price": 74.38,
       "strategy": "trend_reversal"
     },
     "000657": {
@@ -38,7 +38,7 @@
       "name": "中钨高新",
       "quantity": 3200,
       "avg_cost": 56.04,
-      "current_price": 56.04,
+      "current_price": 60.44,
       "strategy": "trend_reversal"
     }
   },
@@ -176,6 +176,13 @@
       "total_value": 2012166.0,
       "cash": 735246.0,
       "market_value": 1276920.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-07-21",
+      "total_value": 2002928.0,
+      "cash": 735246.0,
+      "market_value": 1267682.0,
       "position_count": 5
     }
   ],

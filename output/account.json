@@ -6,7 +6,7 @@
       "name": "山金国际",
       "quantity": 8300,
       "avg_cost": 18.04,
-      "current_price": 19.0,
+      "current_price": 20.47,
       "strategy": "deep_value"
     },
     "002027": {
@@ -14,7 +14,7 @@
       "name": "分众传媒",
       "quantity": 31100,
       "avg_cost": 4.82,
-      "current_price": 5.15,
+      "current_price": 5.11,
       "strategy": "deep_value"
     },
     "002558": {
@@ -22,7 +22,7 @@
       "name": "巨人网络",
       "quantity": 2600,
       "avg_cost": 27.23,
-      "current_price": 29.98,
+      "current_price": 29.87,
       "strategy": "deep_value"
     }
   },
@@ -192,6 +192,13 @@
       "total_value": 1017080.0,
       "cash": 621267.0,
       "market_value": 395813.0,
+      "position_count": 3
+    },
+    {
+      "date": "2026-07-21",
+      "total_value": 1027751.0,
+      "cash": 621267.0,
+      "market_value": 406484.0,
       "position_count": 3
     }
   ],
