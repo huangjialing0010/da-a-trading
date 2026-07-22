@@ -33,6 +33,51 @@ COOLING_OFF_DAYS = 20  # 止损后冷却交易日数，防止卖出后立即买�
 # K线内存缓存：同一脚本内同一代码只拉一次网络
 _kline_cache: dict[str, "pd.DataFrame"] = {}
 
+# 基准价内存缓存：当次运行内只拉一次网络
+_bm_price_cache: float | None = None
+
+
+def _get_benchmark_price(today: date) -> float:
+    """缓存优先获取沪深300最新收盘价，仅缓存缺当日数据时才拉一次网络。"""
+    global _bm_price_cache
+    if _bm_price_cache is not None:
+        return _bm_price_cache
+
+    import pandas as pd
+    bm_cache_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
+    fallback = 0.0
+
+    # 1. 读缓存，检查是否已有当日数据
+    if bm_cache_file.exists():
+        try:
+            bm_cache = pd.read_csv(bm_cache_file)
+            if len(bm_cache) > 0:
+                last_date = str(bm_cache.iloc[-1].get("date", ""))
+                col = next((c for c in ["close", "收盘"] if c in bm_cache.columns), None)
+                if col:
+                    fallback = float(bm_cache[col].iloc[-1])
+                if last_date == today.isoformat():
+                    _bm_price_cache = fallback
+                    return _bm_price_cache
+        except Exception:
+            pass
+
+    # 2. 缓存缺当日数据，尝试拉一次网络
+    try:
+        import akshare as ak
+        bm_df = ak.stock_zh_index_daily_em(symbol="sh000300")
+        if bm_df is not None and not bm_df.empty:
+            bm_df.columns = [c.lower() for c in bm_df.columns]
+            bm_df.to_csv(bm_cache_file, encoding="utf-8")
+            _bm_price_cache = float(bm_df["close"].iloc[-1])
+            return _bm_price_cache
+    except Exception:
+        pass
+
+    # 3. 网络失败，用缓存兜底
+    _bm_price_cache = fallback
+    return _bm_price_cache
+
 
 def _get_kline(code: str, ttl_days: int = 1) -> "pd.DataFrame":
     """fetch_daily_kline 的内存缓存包装。ttl_days=0 首次拉取后缓存。"""
@@ -330,25 +375,7 @@ def trend_daily_update() -> str:
     acc.record_snapshot()
 
     # ── 5. 基准对比 ──
-    bm_price = 0.0
-    bm_cache_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
-    try:
-        import akshare as ak
-        bm_df = ak.stock_zh_index_daily_em(symbol="sh000300")
-        if bm_df is not None and not bm_df.empty:
-            bm_df.columns = [c.lower() for c in bm_df.columns]
-            bm_price = float(bm_df["close"].iloc[-1])
-            bm_df.to_csv(bm_cache_file, encoding="utf-8")
-    except Exception:
-        if bm_cache_file.exists():
-            try:
-                bm_cache = pd.read_csv(bm_cache_file)
-                if "close" in bm_cache.columns:
-                    bm_price = float(bm_cache["close"].iloc[-1])
-                elif "收盘" in bm_cache.columns:
-                    bm_price = float(bm_cache["收盘"].iloc[-1])
-            except Exception:
-                pass
+    bm_price = _get_benchmark_price(today)
 
     # 反推初始资金：现金 + 累计买入 - 累计卖出
     buy_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "BUY")
@@ -755,44 +782,7 @@ def daily_update() -> str:
     stale_warn = " [警告] 数据过期!" if days_stale > 3 else ""
 
     # 4.1 基准对比：沪深300指数价格
-    bm_price = 0.0
-    bm_cache_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
-
-    def _read_bm_cache():
-        nonlocal bm_price
-        import pandas as pd
-        try:
-            bm_cache = pd.read_csv(bm_cache_file)
-            if len(bm_cache) == 0:
-                return
-            if "close" in bm_cache.columns:
-                bm_price = float(bm_cache["close"].iloc[-1])
-            elif "收盘" in bm_cache.columns:
-                bm_price = float(bm_cache["收盘"].iloc[-1])
-            elif bm_cache.shape[1] >= 3:
-                bm_cache2 = pd.read_csv(bm_cache_file, index_col=0)
-                if "close" in bm_cache2.columns:
-                    bm_price = float(bm_cache2["close"].iloc[-1])
-                elif "收盘" in bm_cache2.columns:
-                    bm_price = float(bm_cache2["收盘"].iloc[-1])
-        except Exception:
-            pass
-
-    import time as _time
-    cache_age = (_time.time() - bm_cache_file.stat().st_mtime) if bm_cache_file.exists() else 999999
-    if cache_age < 86400 and bm_cache_file.exists():
-        _read_bm_cache()
-    if bm_price == 0.0:
-        try:
-            import akshare as ak
-            bm_df = ak.stock_zh_index_daily_em(symbol="sh000300")
-            if bm_df is not None and not bm_df.empty:
-                bm_df.columns = [c.lower() for c in bm_df.columns]
-                bm_price = float(bm_df["close"].iloc[-1])
-                bm_cache_file.parent.mkdir(parents=True, exist_ok=True)
-                bm_df.to_csv(bm_cache_file, encoding="utf-8")
-        except Exception:
-            _read_bm_cache()
+    bm_price = _get_benchmark_price(today)
     initial_cash = _load_config()["account"]["initial_cash"]
     total_ret = (acc.state.total_value / initial_cash) - 1
 
