@@ -27,6 +27,8 @@ OUTPUT_DIR = BASE_DIR / "output"
 
 BATCH_STATE_FILE = OUTPUT_DIR / "batch_state.json"
 PANIC_STATE_FILE = OUTPUT_DIR / "panic_state.json"
+TREND_COOLING_OFF_FILE = OUTPUT_DIR / "trend_cooling_off.json"
+COOLING_OFF_DAYS = 20  # 止损后冷却交易日数，防止卖出后立即买回
 
 # K线内存缓存：同一脚本内同一代码只拉一次网络
 _kline_cache: dict[str, "pd.DataFrame"] = {}
@@ -199,6 +201,7 @@ def trend_daily_update() -> str:
     hold_min_days = dv.get("hold_min_months", 6) * 30
     hold_max_days = dv.get("hold_max_months", 18) * 30
 
+    stopped_today = set()
     for pos in list(acc.get_holdings()):
         price = pos.current_price
         if price <= 0:
@@ -231,9 +234,35 @@ def trend_daily_update() -> str:
         if sell_reason:
             ok, msg = acc.sell(pos.code, price, pos.quantity, sell_reason)
             lines.append(f"  [卖出] {msg}")
+            if "硬止损" in sell_reason or "MA200" in sell_reason:
+                stopped_today.add(pos.code)
 
-    # ── 3. 入场：质量过滤后取前3只 ──
+    # ── 止损冷却期：防止卖出后立刻买回 ──
+    cooling_off = {}
+    if TREND_COOLING_OFF_FILE.exists():
+        try:
+            cooling_off = json.loads(TREND_COOLING_OFF_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    # 清理已过期的冷却记录
+    cooling_off = {k: v for k, v in cooling_off.items()
+                   if (today - date.fromisoformat(v)).days <= COOLING_OFF_DAYS}
+
+    # 加入今日止损
+    for code in stopped_today:
+        cooling_off[code] = today.isoformat()
+        lines.append(f"  [冷却] {code} 止损后冷却{COOLING_OFF_DAYS}个交易日")
+
+    if cooling_off:
+        TREND_COOLING_OFF_FILE.write_text(
+            json.dumps(cooling_off, ensure_ascii=False, indent=2), encoding="utf-8")
+    elif TREND_COOLING_OFF_FILE.exists():
+        TREND_COOLING_OFF_FILE.unlink()
+
+    # ── 3. 入场：质量过滤后取前N只 ──
     held_codes = set(acc.get_holding_codes())
+    held_codes.update(cooling_off.keys())  # 冷却中的股票等同已持有，不买入
     max_positions = 5
     if len(acc.get_holdings()) < max_positions and acc.state.cash > 50000:
         slots = max_positions - len(acc.get_holdings())

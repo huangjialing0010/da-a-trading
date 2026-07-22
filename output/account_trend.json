@@ -1,20 +1,12 @@
 {
-  "cash": 845690.0,
+  "cash": 1082654.0,
   "positions": {
     "000807": {
       "code": "000807",
       "name": "云铝股份",
       "quantity": 17800,
       "avg_cost": 22.39,
-      "current_price": 26.1,
-      "strategy": "trend_reversal"
-    },
-    "000657": {
-      "code": "000657",
-      "name": "中钨高新",
-      "quantity": 3900,
-      "avg_cost": 76.84,
-      "current_price": 69.8,
+      "current_price": 25.12,
       "strategy": "trend_reversal"
     },
     "002558": {
@@ -22,7 +14,7 @@
       "name": "巨人网络",
       "quantity": 8800,
       "avg_cost": 29.09,
-      "current_price": 29.56,
+      "current_price": 29.12,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -30,7 +22,7 @@
       "name": "荣盛石化",
       "quantity": 17400,
       "avg_cost": 11.5,
-      "current_price": 11.1,
+      "current_price": 11.33,
       "strategy": "trend_reversal"
     }
   },
@@ -74,6 +66,16 @@
       "quantity": 17400,
       "reason": "趋势入场: 200万初始资金重建",
       "pnl": 0.0
+    },
+    {
+      "time": "2026-07-20T14:26:50.813390",
+      "code": "000657",
+      "name": "中钨高新",
+      "direction": "SELL",
+      "price": 60.76,
+      "quantity": 3900,
+      "reason": "硬止损 -20.9%",
+      "pnl": -62712.00
     }
   ],
   "equity_snapshots": [
@@ -118,6 +120,13 @@
       "cash": 845690.0,
       "market_value": 1190068.0,
       "position_count": 4
+    },
+    {
+      "date": "2026-07-20",
+      "total_value": 1983188.0,
+      "cash": 1082654.0,
+      "market_value": 900534.0,
+      "position_count": 3
     }
   ],
   "created_at": "2026-07-08T15:04:35.770491"
