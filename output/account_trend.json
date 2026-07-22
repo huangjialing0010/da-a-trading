@@ -1,12 +1,12 @@
 {
-  "cash": 1082654.0,
+  "cash": 735246.0,
   "positions": {
     "000807": {
       "code": "000807",
       "name": "云铝股份",
       "quantity": 17800,
       "avg_cost": 22.39,
-      "current_price": 25.12,
+      "current_price": 25.18,
       "strategy": "trend_reversal"
     },
     "002558": {
@@ -14,7 +14,7 @@
       "name": "巨人网络",
       "quantity": 8800,
       "avg_cost": 29.09,
-      "current_price": 29.12,
+      "current_price": 29.87,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -22,7 +22,23 @@
       "name": "荣盛石化",
       "quantity": 17400,
       "avg_cost": 11.5,
-      "current_price": 11.33,
+      "current_price": 11.47,
+      "strategy": "trend_reversal"
+    },
+    "000858": {
+      "code": "000858",
+      "name": "五 粮 液",
+      "quantity": 2200,
+      "avg_cost": 76.4,
+      "current_price": 74.38,
+      "strategy": "trend_reversal"
+    },
+    "000657": {
+      "code": "000657",
+      "name": "中钨高新",
+      "quantity": 3200,
+      "avg_cost": 56.04,
+      "current_price": 60.44,
       "strategy": "trend_reversal"
     }
   },
@@ -68,14 +84,34 @@
       "pnl": 0.0
     },
     {
-      "time": "2026-07-20T14:26:50.813390",
+      "time": "2026-07-15T11:17:46.861167",
+      "code": "000858",
+      "name": "五 粮 液",
+      "direction": "BUY",
+      "price": 76.4,
+      "quantity": 2200,
+      "reason": "趋势入场: 利润改善+151.1pp, ROE=6.5%",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-07-17T11:20:22.478494",
       "code": "000657",
       "name": "中钨高新",
       "direction": "SELL",
       "price": 60.76,
       "quantity": 3900,
       "reason": "硬止损 -20.9%",
-      "pnl": -62712.00
+      "pnl": -62712.00000000002
+    },
+    {
+      "time": "2026-07-20T12:11:59.959781",
+      "code": "000657",
+      "name": "中钨高新",
+      "direction": "BUY",
+      "price": 56.04,
+      "quantity": 3200,
+      "reason": "趋势入场: 利润改善+246.4pp, ROE=9.0%",
+      "pnl": 0.0
     }
   ],
   "equity_snapshots": [
@@ -117,16 +153,37 @@
     {
       "date": "2026-07-15",
       "total_value": 2035758.0,
-      "cash": 845690.0,
-      "market_value": 1190068.0,
+      "cash": 677610.0,
+      "market_value": 1358148.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-07-16",
+      "total_value": 2014351.0,
+      "cash": 677610.0,
+      "market_value": 1336741.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-07-17",
+      "total_value": 1975180.0,
+      "cash": 914574.0,
+      "market_value": 1060606.0,
       "position_count": 4
     },
     {
       "date": "2026-07-20",
-      "total_value": 1983188.0,
-      "cash": 1082654.0,
-      "market_value": 900534.0,
-      "position_count": 3
+      "total_value": 2012166.0,
+      "cash": 735246.0,
+      "market_value": 1276920.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-07-21",
+      "total_value": 2002928.0,
+      "cash": 735246.0,
+      "market_value": 1267682.0,
+      "position_count": 5
     }
   ],
   "created_at": "2026-07-08T15:04:35.770491"
