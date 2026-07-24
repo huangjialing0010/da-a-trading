@@ -43,7 +43,7 @@
   },
   "002558": {
     "name": "巨人网络",
-    "batch": 1,
+    "batch": 2,
     "batches": [
       {
         "qty": 2600,
@@ -60,6 +60,7 @@
         "price": null,
         "trigger": "stable"
       }
-    ]
+    ],
+    "last_batch_date": "2026-07-24"
   }
 }
