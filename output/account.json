@@ -203,9 +203,16 @@
     },
     {
       "date": "2026-07-22",
-      "total_value": 1027751.0,
+      "total_value": 1041511.0,
       "cash": 621267.0,
-      "market_value": 406484.0,
+      "market_value": 420244.0,
+      "position_count": 3
+    },
+    {
+      "date": "2026-07-23",
+      "total_value": 1036431.0,
+      "cash": 621267.0,
+      "market_value": 415164.0,
       "position_count": 3
     },
     {
