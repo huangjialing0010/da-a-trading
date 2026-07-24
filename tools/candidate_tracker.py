@@ -123,6 +123,66 @@ def update_candidate_tracker() -> str:
     return _build_summary(tracker, new_entries, closed_count)
 
 
+def _get_analysis_conclusion(code: str) -> str:
+    """读取 research 文件，提取最新分析结论"""
+    research_file = OUTPUT_DIR / "research" / f"{code}.md"
+    if not research_file.exists():
+        return "未分析"
+    try:
+        text = research_file.read_text(encoding="utf-8")
+        valid_set = {"持有", "继续持有", "买入", "观望", "淘汰"}
+        result = None
+
+        def _extract(cell: str) -> str | None:
+            """从字段文本中提取结论关键词"""
+            best_pos = 999
+            best_v = None
+            for v in valid_set:
+                pos = cell.find(v)
+                # 跳过前面有"不"的（"不买入"、"不持有"不是结论）
+                if pos >= 0 and pos > 0 and cell[pos-1] == "不":
+                    continue
+                if pos >= 0 and pos < best_pos:
+                    best_pos = pos
+                    best_v = v
+            return best_v
+
+        for line in text.split("\n"):
+            clean = line.strip().replace("*", "")
+            # 格式1: "- 2026-07-24 | 观望 | 理由：..."
+            if clean.startswith("- ") and "|" in clean:
+                parts = clean.split("|")
+                for p in parts[1:4]:
+                    v = _extract(p.strip())
+                    if v:
+                        result = v.replace("继续持有", "持有")
+                        break
+            # 格式2: "| 2026-07-24 | ... | **观望** | ..." (表格行，只取短字段，理由长文本跳过)
+            if clean.startswith("|") and "|" in clean[1:]:
+                parts = clean.split("|")
+                for p in parts[1:-1]:
+                    c = p.strip()
+                    if len(c) > 12:  # 结论关键词不会超过12个字符
+                        continue
+                    v = _extract(c)
+                    if v:
+                        result = v.replace("继续持有", "持有")
+                        break
+            # 格式3: "## 结论：**淘汰**" 等独立结论行
+            if "#" in clean and "结论" in clean and "|" not in clean:
+                for v in ("淘汰", "观望", "买入", "持有"):
+                    if v in clean:
+                        result = v
+                        break
+            # 格式4: 理由中包含"继续持有"
+            if "继续持有" in clean and "理由" in clean:
+                result = "持有"
+        return result or "?"
+    except Exception:
+        pass
+    return "?"
+
+
 def _build_summary(tracker: pd.DataFrame, new_entries: int, closed_count: int) -> str:
     """生成日报摘要"""
     lines = []
@@ -142,8 +202,8 @@ def _build_summary(tracker: pd.DataFrame, new_entries: int, closed_count: int) -
             continue
         label = "深价候选" if strat == "deep_value" else "趋势候选"
         lines.append(f"\n  [{label}]")
-        lines.append(f"  {'代码':<8} {'名称':<10} {'持有天数':<8} {'入场价':<8} {'现价':<8} {'盈亏':<8} {'最大盈利':<8} {'最大回撤':<8}")
-        lines.append(f"  {'-' * 70}")
+        lines.append(f"  {'代码':<8} {'名称':<10} {'盈亏':<8} {'分析结论':<12} {'持有天数':>6}")
+        lines.append(f"  {'-' * 50}")
 
         today = date.today()
         for _, r in sub.iterrows():
@@ -154,15 +214,11 @@ def _build_summary(tracker: pd.DataFrame, new_entries: int, closed_count: int) -
                 days = (today - entry_date).days
             except Exception:
                 days = 0
-            entry_p = float(r["entry_price"])
-            cur_p = float(r["current_price"])
             pnl = float(r["pnl_pct"])
-            max_p = float(r.get("max_pnl_pct", 0) or 0)
-            min_p = float(r.get("max_dd_pct", 0) or 0)
+            conclusion = _get_analysis_conclusion(code)
 
-            # 盈亏着色标记
             flag = "+" if pnl > 0 else ("-" if pnl < 0 else " ")
-            lines.append(f"  {code:<8} {name:<10} {days:<8} {entry_p:<8.2f} {cur_p:<8.2f} {flag}{pnl:>+.1%}   {max_p:>+.1%}     {min_p:>+.1%}")
+            lines.append(f"  {code:<8} {name:<10} {flag}{pnl:>+.1%}   {conclusion:<12} {days:>5}天")
 
     return "\n".join(lines)
 
