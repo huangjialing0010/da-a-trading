@@ -128,7 +128,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 - 财务数据混合口径：ROE/CF/EPS取最新年报（12-31），利润/营收YoY取最新报告期（含季度），资产负债率取最新报告期
 - 选股K线拉取并行化（ThreadPoolExecutor 10线程），K线内存缓存防重复拉取
 - 日更：`python main.py daily`（本地）或 Actions 自动（工作日17:30），本地~60秒，Actions ~12分钟
-- 日报输出表格化（`_format_table`，CJK字符宽度感知），6个分区：深价持仓→候选池→候选追踪→市场水位→趋势持仓
+- 日报输出表格化（`_format_table`，CJK字符宽度感知），7个分区：深价持仓→候选池→候选追踪(含分析结论)→市场水位→趋势持仓→待深度分析
 - 容错：`data_fetcher.py` 全局 monkey-patch requests 设 15s 超时，所有网络调用加 try/except，失败降级到缓存
 - 基准价获取：缓存优先（当日缓存直接读），跳过实时调用避免 Eastmoney API 拒连卡死
 - 参数化：策略阈值统一放 config.yaml
