@@ -227,14 +227,14 @@ class BacktestEngine:
             elif profit_yoy > 0:
                 score += 10
 
-        # 营收YoY
+        # 营收YoY — 硬过滤：营收下滑的公司不是低估，是还没跌完
         rev_yoy = _parse_pct(latest.get("营业总收入同比增长率"))
         if rev_yoy is not None:
             metrics["revenue_yoy"] = round(rev_yoy * 100, 2)
-            if rev_yoy <= -0.2:
-                score -= 20
-            elif rev_yoy > 0:
-                score += 5
+            if rev_yoy < 0:
+                flags.append(f"[淘汰]营收同比{rev_yoy*100:.1f}%")
+                return -1, flags, metrics
+            score += 5
 
         return score, flags, metrics
 
@@ -253,6 +253,10 @@ class BacktestEngine:
         bm_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
         if bm_file.exists():
             df = pd.read_csv(bm_file, index_col=0, parse_dates=True)
+            # 缓存文件可能格式不同，统一用 date 列作为索引
+            if "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.set_index("date")
         else:
             try:
                 import akshare as ak

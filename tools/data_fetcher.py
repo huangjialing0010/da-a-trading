@@ -373,12 +373,90 @@ def calculate_erp() -> float:
     return erp
 
 
+def _save_erp_history(erp: float):
+    """追加当日ERP到历史文件"""
+    erp_file = MARKET_DIR / "erp_history.csv"
+    today_str = date.today().isoformat()
+    new_row = pd.DataFrame([{"date": today_str, "erp": round(erp, 4)}])
+    if erp_file.exists():
+        df = pd.read_csv(erp_file)
+        # 今天已有则跳过
+        if today_str in df["date"].values:
+            return
+        df = pd.concat([df, new_row], ignore_index=True)
+    else:
+        df = new_row
+    df.to_csv(erp_file, index=False, encoding="utf-8")
+    global _erp_history_cache
+    _erp_history_cache = None  # 清除缓存，下次重新加载
+
+
+_erp_history_cache = None
+
+
+def get_erp_position_cap(erp: float | None = None) -> dict:
+    """根据ERP水平返回建议仓位上限。
+    优先用分位（历史>60天），历史不足时用阈值启发。
+    返回 {pct, level, method, cap}"""
+    if erp is None:
+        erp = calculate_erp()
+    if erp <= 0:
+        return {"pct": 50, "level": "数据不可用", "method": "fallback", "cap": 0.30}
+
+    erp_file = MARKET_DIR / "erp_history.csv"
+    global _erp_history_cache
+    if _erp_history_cache is None and erp_file.exists():
+        try:
+            df = pd.read_csv(erp_file)
+            if len(df) >= 60:
+                _erp_history_cache = list(df["erp"])
+        except Exception:
+            pass
+
+    if _erp_history_cache and len(_erp_history_cache) >= 60:
+        # 分位法
+        pct = sum(1 for v in _erp_history_cache if v < erp) / len(_erp_history_cache) * 100
+        method = "percentile"
+    else:
+        # 阈值启发（A股经验值：ERP均值~4%，>6%极度便宜，<3%极度贵）
+        if erp >= 0.06:
+            pct = 90
+        elif erp >= 0.05:
+            pct = 70
+        elif erp >= 0.04:
+            pct = 50
+        elif erp >= 0.03:
+            pct = 30
+        else:
+            pct = 10
+        method = "heuristic"
+
+    # 仓位上限映射
+    if pct >= 80:
+        cap, level = 0.80, "极度便宜"
+    elif pct >= 50:
+        cap, level = 0.50, "偏便宜"
+    elif pct >= 20:
+        cap, level = 0.30, "偏贵"
+    else:
+        cap, level = 0.20, "极度贵"
+
+    return {"pct": round(pct, 1), "level": level, "method": method, "cap": cap}
+
+
 def fetch_market_water_level() -> dict:
     """获取综合市场水位"""
     margin = fetch_margin_balance()
     index_pe = fetch_index_pe()
     bond_yield = fetch_bond_yield()
     erp = calculate_erp()
+
+    # 保存ERP历史，用于计算分位
+    if erp > 0:
+        try:
+            _save_erp_history(erp)
+        except Exception:
+            pass
 
     return {
         "date": date.today().isoformat(),

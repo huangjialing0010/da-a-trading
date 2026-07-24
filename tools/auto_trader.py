@@ -474,8 +474,9 @@ def _market_monitor() -> list[str]:
     except Exception:
         pass
 
-    # 3. PE + ERP
+    # 3. PE + ERP + 仓位建议
     try:
+        from .data_fetcher import get_erp_position_cap
         if pe_file.exists() and bond_file.exists():
             with open(pe_file, "r", encoding="utf-8") as f:
                 pe_data = json.load(f)
@@ -485,11 +486,9 @@ def _market_monitor() -> list[str]:
             y10 = bond_data.get("yield_10y", 0)
             if pe > 0 and y10 > 0:
                 erp = (1 / pe) - y10
-                warnings.append(f"PE: {pe:.2f} | 10Y: {y10:.2%} | ERP: {erp:.2%}")
-                if erp > 0.05:
-                    warnings.append(f"✓ ERP>5%，深度价值区域")
-                elif erp < 0.03:
-                    warnings.append(f"⚠️ ERP<3%，市场偏贵")
+                cap_info = get_erp_position_cap(erp)
+                warnings.append(f"PE: {pe:.2f} | 10Y: {y10:.2%} | ERP: {erp:.2%} ({cap_info['level']}, 分位{cap_info['pct']:.0f}%)")
+                warnings.append(f"建议仓位上限: {cap_info['cap']:.0%}（{cap_info['method']}法）")
     except Exception:
         pass
 
@@ -894,6 +893,31 @@ def daily_update() -> str:
         lines.append(f"{trend_report}")
     except Exception as e:
         lines.append(f"\n[趋势虚拟仓] 失败: {e}")
+
+    # 9.5 待深度分析检查：候选池中哪些还没有研究笔记
+    try:
+        research_dir = OUTPUT_DIR / "research"
+        research_dir.mkdir(parents=True, exist_ok=True)
+        existing_research = {f.stem for f in research_dir.glob("*.md")}
+
+        pending = []
+        for csv_file, label in [(OUTPUT_DIR / "candidates.csv", "深价候选"),
+                                 (OUTPUT_DIR / "trend_candidates.csv", "趋势候选")]:
+            if csv_file.exists():
+                import pandas as pd
+                df = pd.read_csv(csv_file)
+                for _, row in df.iterrows():
+                    code = str(row["code"]).zfill(6)
+                    if code not in existing_research:
+                        pending.append((code, row.get("name", ""), label))
+
+        if pending:
+            lines.append(f"\n═══ ⚠ 待深度分析 ═══")
+            for code, name, label in pending:
+                lines.append(f"  [{label}] {code} {name} — 缺少 output/research/{code}.md")
+            lines.append(f"  共 {len(pending)} 只候选待分析，CC 将自动启动深度分析")
+    except Exception as e:
+        lines.append(f"\n[待分析检查] 失败: {e}")
 
     report = "\n".join(lines)
 

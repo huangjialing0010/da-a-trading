@@ -290,15 +290,14 @@ def _financial_check(code: str, config: dict) -> tuple[float, list[str], dict]:
             score += 10
             flags.append(f"利润同比+{profit_yoy*100:.1f}%")
 
-    # 营收增长率
+    # 营收增长率 — 硬过滤：营收下滑=价值陷阱信号，直接淘汰
     rev_yoy = fin.get("revenue_yoy")
     if rev_yoy is not None:
         metrics["revenue_yoy"] = round(rev_yoy * 100, 2)
-        if rev_yoy <= config.get("stops", {}).get("fundamental_stop_revenue", -0.2):
-            score -= 20
-            flags.append(f"[警告]营收同比{rev_yoy*100:.1f}%")
-        elif rev_yoy > 0:
-            score += 5
+        if rev_yoy < 0:
+            flags.append(f"[淘汰]营收同比{rev_yoy*100:.1f}%")
+            return -1, flags, metrics
+        score += 5
 
     return score, flags, metrics
 
