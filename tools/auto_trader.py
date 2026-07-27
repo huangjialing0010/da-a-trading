@@ -880,6 +880,60 @@ def daily_update() -> str:
     except Exception as e:
         lines.append(f"\n[候选追踪] 失败: {e}")
 
+    # 8.6 研究结论速览
+    try:
+        from .candidate_tracker import get_conclusion_map
+
+        code_to_name: dict[str, str] = {}
+        for csv_file in [OUTPUT_DIR / "candidates.csv", OUTPUT_DIR / "trend_candidates.csv"]:
+            if csv_file.exists():
+                import pandas as pd
+                df = pd.read_csv(csv_file)
+                for _, r in df.iterrows():
+                    c = str(int(r["code"])).zfill(6)
+                    if c not in code_to_name:
+                        code_to_name[c] = str(r["name"])
+
+        if code_to_name:
+            all_codes = list(code_to_name.keys())
+            cmap = get_conclusion_map(all_codes)
+
+            buy_codes   = [c for c in all_codes if cmap.get(c, "?") in ("买入", "持有")]
+            watch_codes = [c for c in all_codes if cmap.get(c, "?") == "观望"]
+            elim_codes  = [c for c in all_codes if cmap.get(c, "?") == "淘汰"]
+            unknown     = [c for c in all_codes if cmap.get(c, "?") in ("?", "未分析")]
+
+            lines.append(f"\n═══ 研究结论速览 ═══")
+            lines.append(f"  候选池共 {len(all_codes)} 只，已分析 {len(all_codes) - len(unknown)} 只")
+
+            if buy_codes:
+                lines.append(f"\n  [建议买入/持有] {len(buy_codes)}只")
+                for c in buy_codes:
+                    n = code_to_name.get(c, c)
+                    lines.append(f"    {c} {_pad_str(n, 10)} — {cmap[c]}")
+            else:
+                lines.append(f"\n  [建议买入/持有] 当前无买入建议候选")
+
+            if watch_codes:
+                lines.append(f"\n  [观望] {len(watch_codes)}只")
+                for c in watch_codes:
+                    n = code_to_name.get(c, c)
+                    lines.append(f"    {c} {_pad_str(n, 10)}")
+
+            if elim_codes:
+                lines.append(f"\n  [淘汰] {len(elim_codes)}只")
+                for c in elim_codes:
+                    n = code_to_name.get(c, c)
+                    lines.append(f"    {c} {_pad_str(n, 10)}")
+
+            if unknown:
+                lines.append(f"\n  [待分析] {len(unknown)}只 — 缺少研究笔记或结论不明")
+                for c in unknown:
+                    n = code_to_name.get(c, c)
+                    lines.append(f"    {c} {_pad_str(n, 10)}")
+    except Exception as e:
+        lines.append(f"\n[研究结论速览] 失败: {e}")
+
     # 8.5 市场水位监控（放在筛选之后，可以拿到行业健康分缓存）
     market = _market_monitor()
     lines.append(f"\n═══ 市场水位 ═══")

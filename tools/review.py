@@ -126,7 +126,7 @@ def weekly_review(acc: VirtualAccount = None) -> str:
 
     # 候选池追踪
     try:
-        from .candidate_tracker import tracker_summary_for_review
+        from .candidate_tracker import tracker_summary_for_review, tracker_stats
         dv_track, _ = tracker_summary_for_review()
         if dv_track:
             lines.append("## 四.五、候选池假设性表现")
@@ -136,6 +136,14 @@ def weekly_review(acc: VirtualAccount = None) -> str:
             for tl in dv_track:
                 lines.append(tl)
             lines.append("")
+
+            stats = tracker_stats()
+            dv_active = stats.get("active", {}).get("dv")
+            if dv_active and dv_active.get("count", 0) > 0:
+                lines.append(f"> **深价追踪汇总**: 平均盈亏 {dv_active['avg_pnl']:+.1%} | "
+                           f"胜率 {dv_active['win_rate']:.0%} ({dv_active['wins']}/{dv_active['count']}) | "
+                           f"最佳 {dv_active['best']:+.1%} | 最差 {dv_active['worst']:+.1%}")
+                lines.append("")
     except Exception:
         pass
 
@@ -430,7 +438,7 @@ def trend_weekly_review() -> str:
 
     # 候选池追踪
     try:
-        from .candidate_tracker import tracker_summary_for_review
+        from .candidate_tracker import tracker_summary_for_review, tracker_stats
         _, tr_track = tracker_summary_for_review()
         if tr_track:
             lines.append("## 四.五、趋势候选假设性表现")
@@ -440,6 +448,14 @@ def trend_weekly_review() -> str:
             for tl in tr_track:
                 lines.append(tl)
             lines.append("")
+
+            stats = tracker_stats()
+            tr_active = stats.get("active", {}).get("tr")
+            if tr_active and tr_active.get("count", 0) > 0:
+                lines.append(f"> **趋势追踪汇总**: 平均盈亏 {tr_active['avg_pnl']:+.1%} | "
+                           f"胜率 {tr_active['win_rate']:.0%} ({tr_active['wins']}/{tr_active['count']}) | "
+                           f"最佳 {tr_active['best']:+.1%} | 最差 {tr_active['worst']:+.1%}")
+                lines.append("")
     except Exception:
         pass
 

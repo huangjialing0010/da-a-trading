@@ -1,7 +1,7 @@
 """候选池假设性买入追踪 — 记录每只候选从首次入选到退出的虚拟收益"""
 
 import pandas as pd
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from .data_fetcher import fetch_daily_kline
@@ -183,8 +183,86 @@ def _get_analysis_conclusion(code: str) -> str:
     return "?"
 
 
+def get_conclusion_map(codes: list[str]) -> dict[str, str]:
+    """批量提取分析结论。"""
+    return {code: _get_analysis_conclusion(code) for code in codes}
+
+
+def tracker_stats() -> dict:
+    """返回追踪汇总统计，供周报/日报使用。"""
+    tracker = _read_tracker()
+    result = {
+        "active": {"dv": None, "tr": None},
+        "exited_recent": {"dv": None, "tr": None, "rows": []}
+    }
+
+    if tracker.empty:
+        return result
+
+    # 活跃追踪统计
+    active = tracker[
+        tracker["exit_date"].isna() | (tracker["exit_date"].astype(str).str.strip() == "")
+    ]
+    for label, strat in [("dv", "deep_value"), ("tr", "trend")]:
+        sub = active[active["strategy"] == strat]
+        pnls = sub["pnl_pct"].dropna().astype(float)
+        if len(pnls) > 0:
+            result["active"][label] = {
+                "count": len(pnls),
+                "avg_pnl": round(float(pnls.mean()), 4),
+                "win_rate": round(float((pnls > 0).sum() / len(pnls)), 4),
+                "wins": int((pnls > 0).sum()),
+                "best": round(float(pnls.max()), 4),
+                "worst": round(float(pnls.min()), 4),
+            }
+        else:
+            result["active"][label] = {
+                "count": 0, "avg_pnl": 0.0, "win_rate": 0.0,
+                "wins": 0, "best": 0.0, "worst": 0.0
+            }
+
+    # 最近退出（7天内）
+    exited = tracker[
+        ~(tracker["exit_date"].isna() | (tracker["exit_date"].astype(str).str.strip() == ""))
+    ]
+    today = date.today()
+    cutoff = (today - timedelta(days=7)).isoformat()
+    for _, r in exited.iterrows():
+        exit_str = str(r["exit_date"]).strip()[:10]
+        if exit_str >= cutoff:
+            code = str(int(r["code"])).zfill(6)
+            name = str(r["name"])
+            pnl = float(r["pnl_pct"])
+            try:
+                edate = datetime.strptime(str(r["entry_date"])[:10], "%Y-%m-%d").date()
+                xdate = datetime.strptime(exit_str, "%Y-%m-%d").date()
+                days_held = (xdate - edate).days
+            except Exception:
+                days_held = 0
+            result["exited_recent"]["rows"].append({
+                "code": code, "name": name,
+                "pnl_pct": round(pnl, 4),
+                "strategy": str(r["strategy"]),
+                "days_held": days_held,
+            })
+
+    for label, strat in [("dv", "deep_value"), ("tr", "trend")]:
+        strat_rows = [r for r in result["exited_recent"]["rows"] if r["strategy"] == strat]
+        if strat_rows:
+            pnls = [r["pnl_pct"] for r in strat_rows]
+            result["exited_recent"][label] = {
+                "count": len(pnls),
+                "avg_pnl": round(sum(pnls) / len(pnls), 4),
+                "win_rate": round(sum(1 for p in pnls if p > 0) / len(pnls), 4),
+                "wins": sum(1 for p in pnls if p > 0),
+            }
+
+    return result
+
+
 def _build_summary(tracker: pd.DataFrame, new_entries: int, closed_count: int) -> str:
     """生成日报摘要"""
+    today = date.today()
     lines = []
 
     # 活跃候选表
@@ -205,7 +283,6 @@ def _build_summary(tracker: pd.DataFrame, new_entries: int, closed_count: int) -
         lines.append(f"  {'代码':<8} {'名称':<10} {'盈亏':<8} {'分析结论':<12} {'持有天数':>6}")
         lines.append(f"  {'-' * 50}")
 
-        today = date.today()
         for _, r in sub.iterrows():
             code = str(int(r["code"])).zfill(6)
             name = str(r["name"])
@@ -219,6 +296,45 @@ def _build_summary(tracker: pd.DataFrame, new_entries: int, closed_count: int) -
 
             flag = "+" if pnl > 0 else ("-" if pnl < 0 else " ")
             lines.append(f"  {code:<8} {name:<10} {flag}{pnl:>+.1%}   {conclusion:<12} {days:>5}天")
+
+        # 汇总行
+        pnl_vals = sub["pnl_pct"].dropna().astype(float)
+        if len(pnl_vals) > 0:
+            avg = float(pnl_vals.mean())
+            wins = int((pnl_vals > 0).sum())
+            best = float(pnl_vals.max())
+            worst = float(pnl_vals.min())
+            wl = f"胜率 {wins}/{len(pnl_vals)}"
+            lines.append(f"    汇总: 平均盈亏 {avg:+.1%} | {wl} | 最佳 {best:+.1%} | 最差 {worst:+.1%}")
+
+    # 最近退出（7天内）
+    cutoff = (today - timedelta(days=7)).isoformat()
+    exited = tracker[
+        tracker["exit_date"].notna() & (tracker["exit_date"].astype(str).str.strip() != "")
+    ]
+    recent_exits = []
+    for _, r in exited.iterrows():
+        xd = str(r["exit_date"]).strip()[:10]
+        if xd >= cutoff:
+            recent_exits.append(r)
+
+    if recent_exits:
+        lines.append(f"\n  ─── 最近退出（7天内） ───")
+        lines.append(f"  {'代码':<8} {'名称':<10} {'最终盈亏':<10} {'策略':<8} {'持有天数':>6}")
+        lines.append(f"  {'-' * 50}")
+        for r in recent_exits:
+            code = str(int(r["code"])).zfill(6)
+            name = str(r["name"])
+            pnl = float(r["pnl_pct"])
+            strat_label = "深价" if r["strategy"] == "deep_value" else "趋势"
+            try:
+                ed = datetime.strptime(str(r["entry_date"])[:10], "%Y-%m-%d").date()
+                xd = datetime.strptime(str(r["exit_date"])[:10], "%Y-%m-%d").date()
+                days_held = (xd - ed).days
+            except Exception:
+                days_held = 0
+            flag = "+" if pnl > 0 else ("-" if pnl < 0 else " ")
+            lines.append(f"  {code:<8} {name:<10} {flag}{pnl:>+.1%}   {strat_label:<8} {days_held:>5}天")
 
     return "\n".join(lines)
 
