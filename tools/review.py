@@ -10,7 +10,7 @@ import pandas as pd
 import yaml
 
 from .account import VirtualAccount
-from .data_fetcher import fetch_market_water_level
+from .data_fetcher import fetch_market_water_level, fetch_daily_kline
 from .screener import load_candidates
 from .industry_analyzer import get_all_industry_scores, get_industry_distribution
 
@@ -27,6 +27,30 @@ def load_config() -> dict:
 
 def _ensure_dir():
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _exit_info(pos, cfg=None) -> str:
+    """生成持仓的止盈/止损显示字符串"""
+    if cfg is None:
+        cfg = load_config()
+    hard_stop_pct = cfg["stops"]["hard_stop"]
+    trail_trigger_pct = cfg["take_profit"]["trail_trigger"]
+    trail_drawdown_pct = cfg["take_profit"]["trail_drawdown"]
+
+    hard_stop_price = pos.avg_cost * (1 + hard_stop_pct)
+    pnl = pos.pnl_pct
+
+    kline = fetch_daily_kline(pos.code)
+    if kline.empty:
+        return f"损{hard_stop_price:.2f}"
+
+    if pnl >= trail_trigger_pct:
+        recent_high = float(kline["收盘"].tail(20).max())
+        trail_stop = recent_high * (1 - trail_drawdown_pct)
+        return f"止盈{trail_stop:.2f}/损{hard_stop_price:.2f}"
+    else:
+        trigger_price = pos.avg_cost * (1 + trail_trigger_pct)
+        return f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
 
 
 # ============================================================
@@ -80,11 +104,12 @@ def weekly_review(acc: VirtualAccount = None) -> str:
     lines.append("")
     positions = acc.get_holdings()
     if positions:
-        lines.append(f"| 代码 | 名称 | 数量 | 成本 | 现价 | 市值 | 盈亏 | 仓位 |")
-        lines.append(f"|------|------|------|------|------|------|------|------|")
+        lines.append(f"| 代码 | 名称 | 数量 | 成本 | 现价 | 市值 | 盈亏 | 止盈/止损 | 仓位 |")
+        lines.append(f"|------|------|------|------|------|------|------|-----------|------|")
         for p in positions:
             w = p.market_value / total if total > 0 else 0
-            lines.append(f"| {p.code} | {p.name} | {p.quantity} | {p.avg_cost:.2f} | {p.current_price:.2f} | {p.market_value:,.0f} | {p.pnl_pct:+.2%} | {w:.1%} |")
+            ei = _exit_info(p)
+            lines.append(f"| {p.code} | {p.name} | {p.quantity} | {p.avg_cost:.2f} | {p.current_price:.2f} | {p.market_value:,.0f} | {p.pnl_pct:+.2%} | {ei} | {w:.1%} |")
     else:
         lines.append("空仓")
     lines.append("")
@@ -285,11 +310,19 @@ def monthly_review(acc: VirtualAccount = None) -> str:
     lines.append("")
 
     # 三、当前持仓质量
-    lines.append("## 三、持仓质量")
+    lines.append("## 三、持仓明细")
     lines.append("")
-    for p in acc.get_holdings():
-        held_days = acc.get_held_days(p.code)
-        lines.append(f"- **{p.name}**({p.code}): 持有 {held_days} 天, 盈亏 {p.pnl_pct:+.2%}, 仓位 {p.market_value/total:.1%}")
+    positions = acc.get_holdings()
+    if positions:
+        lines.append(f"| 代码 | 名称 | 数量 | 成本 | 现价 | 盈亏 | 止盈/止损 | 仓位 | 持有天数 |")
+        lines.append(f"|------|------|------|------|------|------|-----------|------|----------|")
+        for p in positions:
+            w = p.market_value / total if total > 0 else 0
+            ei = _exit_info(p)
+            held_days = acc.get_held_days(p.code)
+            lines.append(f"| {p.code} | {p.name} | {p.quantity} | {p.avg_cost:.2f} | {p.current_price:.2f} | {p.pnl_pct:+.2%} | {ei} | {w:.1%} | {held_days} |")
+    else:
+        lines.append("空仓")
     lines.append("")
 
     # 四、策略评估
@@ -389,11 +422,12 @@ def trend_weekly_review() -> str:
     lines.append("")
     positions = acc.get_holdings()
     if positions:
-        lines.append(f"| 代码 | 名称 | 数量 | 成本 | 现价 | 盈亏 | 仓位 |")
-        lines.append(f"|------|------|------|------|------|------|------|")
+        lines.append(f"| 代码 | 名称 | 数量 | 成本 | 现价 | 盈亏 | 止盈/止损 | 仓位 |")
+        lines.append(f"|------|------|------|------|------|------|-----------|------|")
         for p in positions:
             w = p.market_value / total if total > 0 else 0
-            lines.append(f"| {p.code} | {p.name} | {p.quantity} | {p.avg_cost:.2f} | {p.current_price:.2f} | {p.pnl_pct:+.2%} | {w:.1%} |")
+            ei = _exit_info(p)
+            lines.append(f"| {p.code} | {p.name} | {p.quantity} | {p.avg_cost:.2f} | {p.current_price:.2f} | {p.pnl_pct:+.2%} | {ei} | {w:.1%} |")
     else:
         lines.append("空仓")
     lines.append("")
@@ -548,10 +582,18 @@ def trend_monthly_review() -> str:
     lines.append("")
 
     # 持仓质量
-    lines.append("## 三、当前持仓")
+    lines.append("## 三、持仓明细")
     lines.append("")
-    for p in acc.get_holdings():
-        lines.append(f"- **{p.name}**({p.code}): 盈亏 {p.pnl_pct:+.2%}, 仓位 {p.market_value/total:.1%}" if total > 0 else f"- **{p.name}**({p.code})")
+    positions = acc.get_holdings()
+    if positions:
+        lines.append(f"| 代码 | 名称 | 数量 | 成本 | 现价 | 盈亏 | 止盈/止损 | 仓位 |")
+        lines.append(f"|------|------|------|------|------|------|-----------|------|")
+        for p in positions:
+            w = p.market_value / total if total > 0 else 0
+            ei = _exit_info(p)
+            lines.append(f"| {p.code} | {p.name} | {p.quantity} | {p.avg_cost:.2f} | {p.current_price:.2f} | {p.pnl_pct:+.2%} | {ei} | {w:.1%} |")
+    else:
+        lines.append("空仓")
     lines.append("")
 
     # 累计表现跟踪

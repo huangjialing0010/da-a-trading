@@ -224,6 +224,11 @@ def trend_daily_update() -> str:
     candidates = pd.read_csv(trend_file)
 
     # ── 1. 更新持仓价格 ──
+    cfg = _load_config()
+    hard_stop_pct = cfg["stops"]["hard_stop"]
+    trail_trigger_pct = cfg["take_profit"]["trail_trigger"]
+    trail_drawdown_pct = cfg["take_profit"]["trail_drawdown"]
+
     tr_rows = []
     for pos in acc.get_holdings():
         kline = fetch_daily_kline(pos.code, ttl_days=0)
@@ -234,12 +239,24 @@ def trend_daily_update() -> str:
         acc.update_price(pos.code, new_price)
         pnl = (new_price / pos.avg_cost - 1) if pos.avg_cost > 0 else 0
         mkt_val = new_price * pos.quantity
+
+        # 止损/止盈线
+        hard_stop_price = pos.avg_cost * (1 + hard_stop_pct)
+        close_prices = kline["收盘"]
+        if pnl >= trail_trigger_pct:
+            recent_high = float(close_prices.tail(20).max())
+            trail_stop = recent_high * (1 - trail_drawdown_pct)
+            exit_info = f"止盈{trail_stop:.2f}/损{hard_stop_price:.2f}"
+        else:
+            trigger_price = pos.avg_cost * (1 + trail_trigger_pct)
+            exit_info = f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
+
         tr_rows.append([pos.code, pos.name, f"{pos.quantity:,}",
                         f"{pos.avg_cost:.2f}", f"{new_price:.2f}",
-                        f"{mkt_val:,.0f}", f"{pnl:+.1%}", pos.strategy or "trend_reversal"])
+                        f"{mkt_val:,.0f}", f"{pnl:+.1%}",
+                        exit_info, pos.strategy or "trend_reversal"])
 
     # ── 2. 退出检查（复用主仓规则：硬止损/MA200/移动止盈/到期）──
-    cfg = _load_config()
     stops = cfg["stops"]
     tp = cfg["take_profit"]
     dv = cfg["deep_value"]
@@ -395,7 +412,7 @@ def trend_daily_update() -> str:
 
     if tr_rows:
         lines.append(_format_table(
-            ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "策略"],
+            ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "止盈/止损", "策略"],
             tr_rows))
     lines.append(f"\n  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
     lines.append(f"  成立以来: {total_ret:+.2%} | 沪深300: {bm_ret:+.2%} | 超额: {total_ret - bm_ret:+.2%}")
@@ -572,6 +589,11 @@ def daily_update() -> str:
         del batch_state[c]
 
     # 1. 更新持仓价格（收集数据用于表格输出）
+    cfg = _load_config()
+    hard_stop_pct = cfg["stops"]["hard_stop"]
+    trail_trigger_pct = cfg["take_profit"]["trail_trigger"]
+    trail_drawdown_pct = cfg["take_profit"]["trail_drawdown"]
+
     dv_rows = []
     latest_date = ""
     for pos in acc.get_holdings():
@@ -589,9 +611,22 @@ def daily_update() -> str:
 
         pnl = (new_price / pos.avg_cost - 1) if pos.avg_cost > 0 else 0
         mkt_val = new_price * pos.quantity
+
+        # 止损/止盈线
+        hard_stop_price = pos.avg_cost * (1 + hard_stop_pct)
+        close_prices = kline["收盘"]
+        if pnl >= trail_trigger_pct:
+            recent_high = float(close_prices.tail(20).max())
+            trail_stop = recent_high * (1 - trail_drawdown_pct)
+            exit_info = f"止盈{trail_stop:.2f}/损{hard_stop_price:.2f}"
+        else:
+            trigger_price = pos.avg_cost * (1 + trail_trigger_pct)
+            exit_info = f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
+
         dv_rows.append([pos.code, pos.name, f"{pos.quantity:,}",
                         f"{pos.avg_cost:.2f}", f"{new_price:.2f}",
-                        f"{mkt_val:,.0f}", f"{pnl:+.1%}", pos.strategy or "deep_value"])
+                        f"{mkt_val:,.0f}", f"{pnl:+.1%}",
+                        exit_info, pos.strategy or "deep_value"])
 
     acc._save()  # 价格更新立即持久化
 
@@ -802,7 +837,7 @@ def daily_update() -> str:
     lines.append(f"\n═══ 深价主仓 ═══")
     if dv_rows:
         lines.append(_format_table(
-            ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "策略"],
+            ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "止盈/止损", "策略"],
             dv_rows))
     lines.append(f"\n  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
     lines.append(f"  成立以来: {total_ret:+.2%} | 沪深300: {bm_ret:+.2%} | 超额: {alpha:+.2%}")
