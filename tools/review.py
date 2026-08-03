@@ -236,34 +236,53 @@ def weekly_review(acc: VirtualAccount = None) -> str:
 # 月报
 # ============================================================
 
-def monthly_review(acc: VirtualAccount = None) -> str:
+def monthly_review(acc: VirtualAccount = None, target_month: date = None) -> str:
+    """生成月度复盘报告。
+
+    target_month: 目标月份中的任意一天（date对象），默认上月。
+                  例如传入 date(2026,7,15) 生成 2026年7月 月报。
+    """
     if acc is None:
         acc = VirtualAccount()
 
-    today = date.today()
-    month_start = today.replace(day=1)
+    if target_month is None:
+        today = date.today()
+        target_month = today.replace(day=1) - timedelta(days=1)
+
+    month_label = f"{target_month.year}年{target_month.month}月"
+    month_str = target_month.strftime("%Y-%m")
+    month_start = target_month.replace(day=1)
+    # 月末 = 下月1号（用于筛选snapshot和交易的上界）
+    if target_month.month == 12:
+        next_month_start = target_month.replace(year=target_month.year+1, month=1, day=1)
+    else:
+        next_month_start = target_month.replace(month=target_month.month+1, day=1)
 
     _ensure_dir()
 
     lines = []
     lines.append(f"# 月度复盘报告")
-    lines.append(f"**月份**: {today.year}年{today.month}月")
+    lines.append(f"**月份**: {month_label}")
     lines.append(f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     lines.append("")
 
     # 一、绩效总览
-    total = acc.state.total_value
-    initial = load_config().get("account", {}).get("initial_cash", 1_000_000)
-    total_return = total / initial - 1
-
-    # 计算月收益和最大回撤
     snaps = acc.state.equity_snapshots
-    month_snaps = [s for s in snaps if s["date"] >= month_start.isoformat()]
+    month_snaps = [s for s in snaps if month_start.isoformat() <= s["date"] < next_month_start.isoformat()]
+    initial = load_config().get("account", {}).get("initial_cash", 1_000_000)
+
+    if month_snaps:
+        month_end_value = month_snaps[-1]["total_value"]
+        month_start_value = month_snaps[0]["total_value"]
+    else:
+        month_end_value = acc.state.total_value
+        month_start_value = acc.state.total_value
+
+    total_return = month_end_value / initial - 1
     monthly_return = 0.0
     max_drawdown = 0.0
     if len(month_snaps) >= 2:
         monthly_return = month_snaps[-1]["total_value"] / month_snaps[0]["total_value"] - 1
-        # 最大回撤
         peak = month_snaps[0]["total_value"]
         max_dd = 0
         for s in month_snaps:
@@ -276,8 +295,8 @@ def monthly_review(acc: VirtualAccount = None) -> str:
 
     lines.append(f"| 指标 | 数值 |")
     lines.append(f"|------|------|")
-    lines.append(f"| 月初资产 | {month_snaps[0]['total_value']:,.0f}" if month_snaps else "| 月初资产 | N/A |")
-    lines.append(f"| 月末资产 | {total:,.0f} |")
+    lines.append(f"| 月初资产 | {month_start_value:,.0f} |")
+    lines.append(f"| 月末资产 | {month_end_value:,.0f} |")
     lines.append(f"| 本月收益率 | {monthly_return:+.2%} |")
     lines.append(f"| 累计收益率 | {total_return:+.2%} |")
     lines.append(f"| 本月最大回撤 | {max_drawdown:.2%} |")
@@ -286,7 +305,7 @@ def monthly_review(acc: VirtualAccount = None) -> str:
     # 二、交易统计
     lines.append("## 二、交易统计")
     lines.append("")
-    month_trades = [t for t in acc.state.trades if t.time[:7] == today.strftime("%Y-%m")]
+    month_trades = [t for t in acc.state.trades if str(t.time)[:7] == month_str]
     buys = [t for t in month_trades if t.direction == "BUY"]
     sells = [t for t in month_trades if t.direction == "SELL"]
     wins = [t for t in sells if t.pnl > 0]
@@ -313,6 +332,7 @@ def monthly_review(acc: VirtualAccount = None) -> str:
     lines.append("## 三、持仓明细")
     lines.append("")
     positions = acc.get_holdings()
+    total = month_end_value
     if positions:
         lines.append(f"| 代码 | 名称 | 数量 | 成本 | 现价 | 盈亏 | 止盈/止损 | 仓位 | 持有天数 |")
         lines.append(f"|------|------|------|------|------|------|-----------|------|----------|")
@@ -350,7 +370,7 @@ def monthly_review(acc: VirtualAccount = None) -> str:
     report = "\n".join(lines)
 
     # 保存
-    filename = f"monthly_{today.strftime('%Y%m')}.md"
+    filename = f"monthly_{target_month.strftime('%Y%m')}.md"
     filepath = REPORT_DIR / filename
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(report)
@@ -503,31 +523,52 @@ def trend_weekly_review() -> str:
     return report
 
 
-def trend_monthly_review() -> str:
-    """趋势策略独立月报"""
+def trend_monthly_review(target_month: date = None) -> str:
+    """趋势策略独立月报。
+
+    target_month: 目标月份中的任意一天（date对象），默认上月。
+    """
     acc = _load_trend_account()
-    today = date.today()
-    month_start = today.replace(day=1)
+
+    if target_month is None:
+        today = date.today()
+        target_month = today.replace(day=1) - timedelta(days=1)
+
+    month_label = f"{target_month.year}年{target_month.month}月"
+    month_str = target_month.strftime("%Y-%m")
+    month_start = target_month.replace(day=1)
+    if target_month.month == 12:
+        next_month_start = target_month.replace(year=target_month.year+1, month=1, day=1)
+    else:
+        next_month_start = target_month.replace(month=target_month.month+1, day=1)
 
     _ensure_dir()
 
     lines = []
     lines.append(f"# 趋势策略月度复盘")
-    lines.append(f"**月份**: {today.year}年{today.month}月")
+    lines.append(f"**月份**: {month_label}")
     lines.append(f"**生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     lines.append("")
     lines.append("## ⚠️ 纸上测试 — 非实盘，仅供参考")
     lines.append("")
 
-    total = acc.state.total_value
+    snaps = acc.state.equity_snapshots
+    month_snaps = [s for s in snaps if month_start.isoformat() <= s["date"] < next_month_start.isoformat()]
+
     # 从交易记录反推初始资金（避免硬编码）
     buy_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "BUY")
     sell_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "SELL")
     initial = acc.state.cash + buy_total - sell_total
-    total_return = total / initial - 1 if initial > 0 else 0
 
-    snaps = acc.state.equity_snapshots
-    month_snaps = [s for s in snaps if s["date"] >= month_start.isoformat()]
+    if month_snaps:
+        month_end_value = month_snaps[-1]["total_value"]
+        month_start_value = month_snaps[0]["total_value"]
+    else:
+        month_end_value = acc.state.total_value
+        month_start_value = acc.state.total_value
+
+    total = month_end_value
+    total_return = total / initial - 1 if initial > 0 else 0
     monthly_return = 0.0
     max_drawdown = 0.0
     if len(month_snaps) >= 2:
@@ -544,9 +585,8 @@ def trend_monthly_review() -> str:
     lines.append("")
     lines.append(f"| 指标 | 数值 |")
     lines.append(f"|------|------|")
-    if month_snaps:
-        lines.append(f"| 月初资产 | {month_snaps[0]['total_value']:,.0f} |")
-    lines.append(f"| 月末资产 | {total:,.0f} |")
+    lines.append(f"| 月初资产 | {month_start_value:,.0f} |")
+    lines.append(f"| 月末资产 | {month_end_value:,.0f} |")
     lines.append(f"| 本月收益率 | {monthly_return:+.2%} |")
     lines.append(f"| 累计收益率 | {total_return:+.2%} |")
     lines.append(f"| 本月最大回撤 | {max_drawdown:.2%} |")
@@ -558,7 +598,7 @@ def trend_monthly_review() -> str:
     all_trades = acc.state.trades
     month_trades = [
         t for t in all_trades
-        if hasattr(t, 'time') and str(t.time)[:7] == today.strftime("%Y-%m")
+        if hasattr(t, 'time') and str(t.time)[:7] == month_str
     ]
     buys = [t for t in month_trades if t.direction == "BUY"]
     sells = [t for t in month_trades if t.direction == "SELL"]
@@ -581,8 +621,8 @@ def trend_monthly_review() -> str:
         lines.append("- 本月无卖出交易")
     lines.append("")
 
-    # 持仓质量
-    lines.append("## 三、持仓明细")
+    # 持仓质量（月末时点的持仓）
+    lines.append("## 三、月末持仓")
     lines.append("")
     positions = acc.get_holdings()
     if positions:
@@ -607,8 +647,9 @@ def trend_monthly_review() -> str:
             if len(pf) >= 2:
                 lines.append(f"| 日期 | 资产 | 策略累计 | 基准累计 | 超额 | 持仓 |")
                 lines.append(f"|------|------|----------|----------|------|------|")
+                row_count = 0
                 for _, r in pf.iterrows():
-                    if len(lines) > 20:
+                    if row_count >= 18:
                         lines.append(f"| ... | ... | ... | ... | ... | ... |")
                         break
                     lines.append(
@@ -616,13 +657,14 @@ def trend_monthly_review() -> str:
                         f"{r['portfolio_return']:+.2%} | {r['benchmark_return']:+.2%} | "
                         f"{r['alpha']:+.2%} | {int(r['positions'])} |"
                     )
+                    row_count += 1
         except Exception:
             pass
     lines.append("")
 
     report = "\n".join(lines)
 
-    filename = f"trend_monthly_{today.strftime('%Y%m')}.md"
+    filename = f"trend_monthly_{target_month.strftime('%Y%m')}.md"
     filepath = REPORT_DIR / filename
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(report)

@@ -24,6 +24,7 @@ from .commodity_fetcher import check_commodity_cycle
 
 BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
+REPORT_DIR = OUTPUT_DIR / "reports"
 
 BATCH_STATE_FILE = OUTPUT_DIR / "batch_state.json"
 PANIC_STATE_FILE = OUTPUT_DIR / "panic_state.json"
@@ -854,7 +855,9 @@ def daily_update() -> str:
     _save_panic_state(panic_state)
 
     # 7. 周报/月报（非关键路径，崩了不影响主流程）
-    if today.weekday() == 4:  # 周五
+    # 周报：周五生成
+    # 月报：上月月报不存在时自动生成（月初容错非交易日）
+    if today.weekday() == 4:
         try:
             from .review import weekly_review, trend_weekly_review
             weekly_review(acc)
@@ -863,15 +866,18 @@ def daily_update() -> str:
             lines.append(f"[趋势周报] trend_weekly_{today.strftime('%Y%m%d')}.md")
         except Exception as e:
             lines.append(f"\n[周报] 生成失败: {e}")
-    if today.day == 1:  # 每月1号
+
+    last_month = today.replace(day=1) - timedelta(days=1)
+    monthly_file = REPORT_DIR / f"monthly_{last_month.strftime('%Y%m')}.md"
+    if not monthly_file.exists():
         try:
             from .review import monthly_review, trend_monthly_review
-            monthly_review(acc)
-            lines.append(f"[月报] monthly_{today.strftime('%Y%m')}.md")
-            trend_monthly_review()
-            lines.append(f"[趋势月报] trend_monthly_{today.strftime('%Y%m')}.md")
+            monthly_review(acc, target_month=last_month)
+            lines.append(f"\n[月报] monthly_{last_month.strftime('%Y%m')}.md")
+            trend_monthly_review(target_month=last_month)
+            lines.append(f"[趋势月报] trend_monthly_{last_month.strftime('%Y%m')}.md")
         except Exception as e:
-            lines.append(f"[月报] 生成失败: {e}")
+            lines.append(f"\n[月报] 生成失败: {e}")
 
     # 8. 每日刷新候选池（周五全量财务验证，其余快速模式）
     try:
