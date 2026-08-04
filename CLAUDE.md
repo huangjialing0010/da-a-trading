@@ -22,6 +22,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 ## 最近变更 / 交接记录
 - 2026-08-04（Codex）修复沪深300基准价自 2026-07-24 起冻结：`tools/auto_trader.py` 的 `_get_benchmark_price` 改用新浪 `stock_zh_index_daily` 为主、东方财富 `stock_zh_index_daily_em` 兜底；网络失败时打印告警，不再静默沿用旧缓存。根因：东财接口持续 `RemoteDisconnected` 拒连，旧代码 `except Exception: pass` 吞掉异常。待办：收盘后补跑日更（17:30 Actions 自动执行），确认 `data/market/benchmark_000300.csv` 恢复每日更新。
 - 2026-08-04（Codex）对抗式审查后落地治理规则：①趋势仓数据熔断（持仓K线滞后于基准日期→当日买卖冻结、不记录净值/表现）；②深价仓超限处置（仓位上限与行业集中度只约束新增，不强制减仓）；③终审样本不足顺延（2027-01-01 交易笔数<30 时顺延3个月并附市场状态）。代码改动在 `tools/auto_trader.py`，规则 ②③ 为文档约定。
+- 2026-08-04（Codex）新建 `output/market_judgment_log.md`：记录系统明确的市场判断，每周五回填命中/未命中，作为系统可靠性的客观度量。注意：本地 `data/market/benchmark_000300.csv` 曾被 Excel 占用导致写入失败，关闭 Excel 后重试；Actions 不受影响。
 
 ## 目录结构
 - `config.yaml` — 策略可调参数 + 回测结论摘要
@@ -49,6 +50,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
   - `logs/` — 每日运行日志
   - `reports/` — 周报/月报（含趋势独立报告）
   - `research/` — 深度分析笔记（每只研究过的股票一文件，买入前必填）
+  - `market_judgment_log.md` — 市场判断台账（每周五回填，验证系统判断命中率）
 - `tools/` — 核心模块
   - `account.py` — 虚拟账户（支持多仓独立路径）
   - `data_fetcher.py` — 数据获取（akshare + 本地缓存，财务数据混合口径：ROE/CF/EPS用年报、利润/营收YoY用最新报告期）
@@ -139,6 +141,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 - 容错：`data_fetcher.py` 全局 monkey-patch requests 设 15s 超时，所有网络调用加 try/except，失败降级到缓存
 - 基准价获取：缓存优先（当日缓存直接读）；缺当日数据时以新浪 `stock_zh_index_daily` 为主、东财 `stock_zh_index_daily_em` 兜底；全部失败打印告警并沿用缓存，避免静默失真
 - 参数化：策略阈值统一放 config.yaml
+- 每周五复盘时回填 `output/market_judgment_log.md`：逐条判定历史市场判断命中/未命中/待验证，命中率是系统可靠性的唯一客观指标
 - git：`data/daily_kline/` 和 `data/financials/` 不入库；`data/market/` 和 `output/`（含 `research/`）入库存档；每次日更后提交
 - 改策略参数前先跑回测验证，回测支持 `config_overrides` 参数覆盖和 `mode` 切换
 - **停止调参**：策略参数固定为当前基线，不再为回测成绩调整。唯一验证是趋势仓纸上跑未知数据（2026-07-08起）
