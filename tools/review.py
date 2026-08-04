@@ -53,6 +53,134 @@ def _exit_info(pos, cfg=None) -> str:
         return f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
 
 
+def _combined_overview_section() -> list:
+    """生成"深价+趋势"合仓总览（周报/月报共用）。"""
+    deep_file = OUTPUT_DIR / "performance.csv"
+    trend_file = OUTPUT_DIR / "performance_trend.csv"
+    bench_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
+    if not deep_file.exists() or not trend_file.exists():
+        return []
+
+    try:
+        deep = pd.read_csv(deep_file)
+        trend = pd.read_csv(trend_file)
+    except Exception:
+        return []
+
+    deep["date"] = pd.to_datetime(deep["date"])
+    trend["date"] = pd.to_datetime(trend["date"])
+    merged = deep.merge(trend, on="date", suffixes=("_deep", "_trend"), how="inner")
+    if merged.empty:
+        return []
+
+    deep_init = float(load_config().get("account", {}).get("initial_cash", 1_000_000))
+    trend_init = float(trend.iloc[0]["portfolio_value"])
+    combined_init = deep_init + trend_init
+    merged["combined_value"] = merged["portfolio_value_deep"] + merged["portfolio_value_trend"]
+    merged["combined_return"] = merged["combined_value"] / combined_init - 1
+
+    def _max_drawdown(vals) -> float:
+        peak = vals.cummax()
+        dd = (vals - peak) / peak
+        return float(-dd.min())
+
+    def _annualized_vol(vals) -> float:
+        ret = vals.pct_change().dropna()
+        if len(ret) < 2:
+            return 0.0
+        return float(ret.std() * (252 ** 0.5))
+
+    deep_v = merged["portfolio_value_deep"]
+    trend_v = merged["portfolio_value_trend"]
+    combo_v = merged["combined_value"]
+
+    deep_ret = deep_v.iloc[-1] / deep_init - 1
+    trend_ret = trend_v.iloc[-1] / trend_init - 1
+    combo_ret = combo_v.iloc[-1] / combined_init - 1
+    mdd_deep = _max_drawdown(deep_v)
+    mdd_trend = _max_drawdown(trend_v)
+    mdd_combo = _max_drawdown(combo_v)
+    vol_deep = _annualized_vol(deep_v)
+    vol_trend = _annualized_vol(trend_v)
+    vol_combo = _annualized_vol(combo_v)
+
+    d_ret = deep_v.pct_change().dropna()
+    t_ret = trend_v.pct_change().dropna()
+    corr = d_ret.corr(t_ret)
+
+    # 沪深300累计按已修复的基准缓存计算（performance*.csv 中 7/24 起基准列沿用旧 4645.95，属历史口径）
+    bench_map = {}
+    bench_ret = None
+    if bench_file.exists():
+        try:
+            bench = pd.read_csv(bench_file)
+            bench["date"] = pd.to_datetime(bench["date"])
+            bench = bench[bench["date"].isin(merged["date"])].sort_values("date")
+            if not bench.empty:
+                first_close = float(bench["close"].iloc[0])
+                last_close = float(bench["close"].iloc[-1])
+                if first_close > 0:
+                    bench_ret = last_close / first_close - 1
+                    bench_map = dict(
+                        zip(bench["date"], bench["close"] / first_close - 1)
+                    )
+        except Exception:
+            bench_ret = None
+
+    if mdd_combo < min(mdd_deep, mdd_trend) - 1e-9:
+        dd_verdict = "低于两个单策略，分散有效"
+    elif mdd_combo < max(mdd_deep, mdd_trend) - 1e-9:
+        dd_verdict = "介于两策略之间，降低了趋势仓尾部风险"
+    else:
+        dd_verdict = "不低于单策略，当前样本下分散未体现"
+
+    if vol_combo < min(vol_deep, vol_trend) - 1e-9:
+        vol_verdict = f"年化波动率 {vol_combo:.1%} 低于两个单策略"
+    elif vol_combo < max(vol_deep, vol_trend) - 1e-9:
+        vol_verdict = f"年化波动率 {vol_combo:.1%} 介于两者之间"
+    else:
+        vol_verdict = f"年化波动率 {vol_combo:.1%} 不低于单策略"
+
+    start = merged["date"].iloc[0].strftime("%Y-%m-%d")
+    end = merged["date"].iloc[-1].strftime("%Y-%m-%d")
+
+    lines = []
+    lines.append("## 一.五、组合总览（深价+趋势）")
+    lines.append("")
+    lines.append(f"组合按初始资金权重合成：深价 {deep_init:,.0f} + 趋势 {trend_init:,.0f}，区间 {start} ~ {end}。")
+    lines.append("")
+    lines.append("| 口径 | 累计收益 | 最大回撤 | 年化波动率 |")
+    lines.append("|------|----------|----------|------------|")
+    lines.append(f"| 深价 | {deep_ret:+.2%} | -{mdd_deep:.2%} | {vol_deep:.1%} |")
+    lines.append(f"| 趋势 | {trend_ret:+.2%} | -{mdd_trend:.2%} | {vol_trend:.1%} |")
+    lines.append(f"| 组合(1:2) | {combo_ret:+.2%} | -{mdd_combo:.2%} | {vol_combo:.1%} |")
+    if bench_ret is not None:
+        lines.append(f"| 沪深300 | {bench_ret:+.2%} | - | - |")
+    lines.append("")
+
+    corr_str = f"，日收益相关度 {corr:.2f}" if corr == corr else ""
+    lines.append(
+        f"> 结论：组合最大回撤 -{mdd_combo:.2%}（深价 -{mdd_deep:.2%} / 趋势 -{mdd_trend:.2%}），"
+        f"{dd_verdict}；{vol_verdict}{corr_str}。"
+    )
+    lines.append(
+        "> 口径说明：沪深300累计按 `data/market/benchmark_000300.csv` close 计算；"
+        "`performance*.csv` 中 7/24 起的基准列沿用旧值 4645.95，属历史口径，日更刷新后会自然对齐。"
+    )
+    lines.append("")
+    lines.append("| 日期 | 组合资产 | 组合累计 | 沪深300累计 |")
+    lines.append("|------|----------|----------|-------------|")
+    for _, r in merged.tail(10).iterrows():
+        bench_r = bench_map.get(r["date"])
+        bench_str = f"{bench_r:+.2%}" if bench_r is not None else "-"
+        lines.append(
+            f"| {r['date'].strftime('%Y-%m-%d')} | {r['combined_value']:,.0f} | "
+            f"{r['combined_return']:+.2%} | {bench_str} |"
+        )
+    lines.append("")
+    return lines
+
+
 # ============================================================
 # 周报
 # ============================================================
@@ -98,6 +226,8 @@ def weekly_review(acc: VirtualAccount = None) -> str:
     lines.append(f"| 持仓市值 | {acc.state.total_market_value:,.0f} |")
     lines.append(f"| 持仓数量 | {acc.state.position_count} |")
     lines.append("")
+
+    lines.extend(_combined_overview_section())
 
     # 二、持仓明细
     lines.append("## 二、持仓明细")
@@ -302,6 +432,8 @@ def monthly_review(acc: VirtualAccount = None, target_month: date = None) -> str
     lines.append(f"| 本月最大回撤 | {max_drawdown:.2%} |")
     lines.append("")
 
+    lines.extend(_combined_overview_section())
+
     # 二、交易统计
     lines.append("## 二、交易统计")
     lines.append("")
@@ -436,6 +568,8 @@ def trend_weekly_review() -> str:
     lines.append(f"| 持仓市值 | {acc.state.total_market_value:,.0f} |")
     lines.append(f"| 持仓数量 | {acc.state.position_count} |")
     lines.append("")
+
+    lines.extend(_combined_overview_section())
 
     # 持仓明细
     lines.append("## 二、持仓明细")
@@ -591,6 +725,8 @@ def trend_monthly_review(target_month: date = None) -> str:
     lines.append(f"| 累计收益率 | {total_return:+.2%} |")
     lines.append(f"| 本月最大回撤 | {max_drawdown:.2%} |")
     lines.append("")
+
+    lines.extend(_combined_overview_section())
 
     # 交易统计
     lines.append("## 二、交易统计")
