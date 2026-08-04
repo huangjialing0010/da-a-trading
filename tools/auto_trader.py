@@ -255,6 +255,23 @@ def _check_industry_limit(code: str, acc: VirtualAccount) -> tuple[bool, str]:
     return True, ""
 
 
+def _check_erp_position_cap(acc: VirtualAccount, erp: float | None = None) -> tuple[bool, str]:
+    """ERP 分位动态仓位上限校验：当前仓位高于上限时禁止买入/加仓。"""
+    try:
+        from .data_fetcher import get_erp_position_cap
+        cap_info = get_erp_position_cap(erp)
+        cap = cap_info["cap"]
+        total_value = acc.state.total_value
+        pos_ratio = acc.state.total_market_value / total_value if total_value > 0 else 0
+        if pos_ratio > cap + 1e-9:
+            return False, (f"仓位{pos_ratio:.1%} > ERP上限{cap:.0%}"
+                           f"（{cap_info['level']}，分位{cap_info['pct']:.0f}%，{cap_info['method']}法），"
+                           f"超限禁止买入/加仓")
+        return True, ""
+    except Exception:
+        return True, ""  # 数据异常时放行，避免网络故障阻断交易
+
+
 TREND_ACCOUNT_FILE = str(OUTPUT_DIR / "account_trend.json")
 TREND_PERF_FILE = OUTPUT_DIR / "performance_trend.csv"
 
@@ -738,7 +755,10 @@ def daily_update() -> str:
             ok, msg = acc.sell(code, price, qty, s.reason)
             lines.append(f"  [卖出] {msg}")
 
-    # 3. 检查分批加仓
+    # 3. 检查分批加仓（受 ERP 动态仓位上限 + 行业集中度约束）
+    erp_cap_ok, erp_cap_msg = _check_erp_position_cap(acc)
+    if not erp_cap_ok:
+        lines.append(f"  [ERP闸门] {erp_cap_msg}，跳过分批加仓")
     for code, cfg in batch_state.items():
         if code not in acc.get_holding_codes():
             continue
@@ -769,6 +789,12 @@ def daily_update() -> str:
             if current <= trigger:
                 if _limit_locked(kline, "buy"):
                     lines.append(f"  [无法成交] {cfg['name']} 一字涨停，无法加仓")
+                    continue
+                if not erp_cap_ok:
+                    continue
+                ind_ok, ind_msg = _check_industry_limit(code, acc)
+                if not ind_ok:
+                    lines.append(f"  [行业闸门] {cfg['name']} 跳过加仓：{ind_msg}")
                     continue
                 qty = next_batch["qty"]
                 price = current
@@ -802,6 +828,12 @@ def daily_update() -> str:
                 if _limit_locked(kline, "buy"):
                     lines.append(f"  [无法成交] {cfg['name']} 一字涨停，无法加仓")
                     continue
+                if not erp_cap_ok:
+                    continue
+                ind_ok, ind_msg = _check_industry_limit(code, acc)
+                if not ind_ok:
+                    lines.append(f"  [行业闸门] {cfg['name']} 跳过加仓：{ind_msg}")
+                    continue
                 qty = next_batch["qty"]
                 ok, msg = acc.buy(code, cfg["name"], current, qty, "deep_value",
                                   f"第{batch_num+1}批加仓: 企稳确认 (站上MA20, 60日线走平, 放量)")
@@ -831,11 +863,16 @@ def daily_update() -> str:
     # 恐慌触发
     if erp >= panic_cfg["trigger_erp"] and not panic_state["active"]:
         lines.append(f"[恐慌触发] ERP={erp:.2%} >= {panic_cfg['trigger_erp']:.0%}")
+        panic_cap_ok, panic_cap_msg = _check_erp_position_cap(acc, erp)
+        if not panic_cap_ok:
+            lines.append(f"  [ERP闸门] {panic_cap_msg}，跳过恐慌买入")
         etfs = panic_cfg["etf_list"]
         per_batch_cash = acc.state.cash * 0.4 / panic_cfg["batches"]
         per_etf_cash = per_batch_cash / len(etfs)
         entries = []
         for etf_code in etfs:
+            if not panic_cap_ok:
+                break
             # 检查是否已持有该ETF（手动买入或其他策略），避免混合成本
             existing = acc.get_position(etf_code)
             if existing and existing.quantity > 0:
@@ -860,8 +897,13 @@ def daily_update() -> str:
 
     # 恐慌加仓
     elif panic_state["active"] and panic_state["batch"] < panic_cfg["batches"]:
+        panic_cap_ok, panic_cap_msg = _check_erp_position_cap(acc, erp)
+        if not panic_cap_ok:
+            lines.append(f"  [ERP闸门] {panic_cap_msg}，跳过恐慌加仓")
         batch_drop = panic_cfg["batch_drop"]
         for entry in panic_state["entries"]:
+            if not panic_cap_ok:
+                break
             kline = _get_kline(entry["code"], ttl_days=0)
             if kline.empty:
                 continue

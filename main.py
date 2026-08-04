@@ -201,22 +201,19 @@ def cmd_trade(_args=None):
         strategy = input("策略 (deep_value/panic/event_arb): ").strip()
         reason = input("理由: ").strip()
 
-        # 行业集中度检查
+        # 超限校验：ERP 分位动态仓位上限 + 行业集中度（申万二级≤2只）
         try:
-            from tools.industry_analyzer import get_stock_industry
-            info = get_stock_industry(code)
-            if info:
-                same = sum(1 for p in acc.get_holdings()
-                          if get_stock_industry(p.code) and
-                          get_stock_industry(p.code)["level1_name"] == info["level1_name"])
-                if same >= 2:
-                    print(f"⚠ 警告: {info['level1_name']}行业已有{same}只持仓，单行业上限2只")
-                    confirm = input("确认继续买入? (y/N): ").strip().lower()
-                    if confirm != 'y':
-                        print("取消买入")
-                        return
+            from tools.auto_trader import _check_erp_position_cap, _check_industry_limit
+            erp_ok, erp_msg = _check_erp_position_cap(acc)
+            if not erp_ok:
+                print(f"✋ {erp_msg}")
+                return
+            ind_ok, ind_msg = _check_industry_limit(code, acc)
+            if not ind_ok:
+                print(f"✋ {ind_msg}，禁止买入")
+                return
         except Exception:
-            pass  # 行业数据不可用时不阻拦
+            pass  # 校验异常时不阻断手动交易
 
         name = code
         try:

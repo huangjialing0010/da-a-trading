@@ -194,9 +194,10 @@ def _check_candidates(account: VirtualAccount, config: dict) -> list[Signal]:
     if not all_cands:
         return signals
 
-    # 检查仓位限制
+    # 检查仓位限制（ERP 分位动态上限，替代固定 80%）
+    from .data_fetcher import get_erp_position_cap
+    max_pct = get_erp_position_cap()["cap"]
     current_pct = account.state.total_market_value / account.state.total_value if account.state.total_value > 0 else 0
-    max_pct = cfg["max_total_position_pct"]
     available_pct = max_pct - current_pct
     if available_pct <= 0.05:
         return signals  # 仓位已满
