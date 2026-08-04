@@ -102,6 +102,19 @@ def _fetch_benchmark_df() -> "pd.DataFrame | None":
     return None
 
 
+def _benchmark_last_date() -> str:
+    """基准缓存最后日期（YYYY-MM-DD），读取失败返回空串。"""
+    import pandas as pd
+    bm_cache_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
+    try:
+        bm_cache = pd.read_csv(bm_cache_file)
+        if len(bm_cache) > 0:
+            return str(bm_cache.iloc[-1].get("date", "")).strip()
+    except Exception:
+        pass
+    return ""
+
+
 def _get_kline(code: str, ttl_days: int = 1) -> "pd.DataFrame":
     """fetch_daily_kline 的内存缓存包装。ttl_days=0 首次拉取后缓存。"""
     import pandas as pd
@@ -253,10 +266,12 @@ def trend_daily_update() -> str:
     trail_drawdown_pct = cfg["take_profit"]["trail_drawdown"]
 
     tr_rows = []
+    latest_data_dates = []
     for pos in acc.get_holdings():
         kline = fetch_daily_kline(pos.code, ttl_days=0)
         if kline.empty:
             continue
+        latest_data_dates.append(str(kline.index[-1].date()))
         new_price = float(kline.iloc[-1]["收盘"])
         old_price = pos.current_price
         acc.update_price(pos.code, new_price)
@@ -278,6 +293,19 @@ def trend_daily_update() -> str:
                         f"{pos.avg_cost:.2f}", f"{new_price:.2f}",
                         f"{mkt_val:,.0f}", f"{pnl:+.1%}",
                         exit_info, pos.strategy or "trend_reversal"])
+
+    # ── 1.5 数据熔断：持仓K线滞后于基准日期时，冻结当日自动交易 ──
+    bm_date = _benchmark_last_date()
+    price_date = max(latest_data_dates) if latest_data_dates else ""
+    if bm_date and price_date and price_date < bm_date:
+        lines.append(f"\n  [数据熔断] 持仓K线日期 {price_date} < 基准日期 {bm_date}，数据陈旧")
+        lines.append("  今日跳过趋势仓自动交易（买入和卖出均不执行），不记录净值/表现")
+        if tr_rows:
+            lines.append(_format_table(
+                ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "止盈/止损", "策略"],
+                tr_rows))
+        lines.append(f"  总资产(未更新): {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
+        return "\n".join(lines)
 
     # ── 2. 退出检查（复用主仓规则：硬止损/MA200/移动止盈/到期）──
     stops = cfg["stops"]
