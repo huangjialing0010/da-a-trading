@@ -48,4 +48,4 @@ GitHub Actions 工作日 17:30 自动执行日更，结果自动提交回仓库�
 - `docs/CHANGES.md` — 变更记录
 - `tools/` — 核心模块
 - `.github/workflows/daily.yml` — Actions 日更流水线
-- `output/` — 账户、候选池、候选追踪、交易记录、表现追踪、周报/月报、市场判断台账
+- `output/` — 账户、候选池、候选追踪、交易记录、表现追踪、周报/月报、市场判断台账、报告索引（`reports/README.md`）

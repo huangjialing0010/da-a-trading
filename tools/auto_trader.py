@@ -979,7 +979,7 @@ def daily_update() -> str:
         try:
             import pandas as pd
             dv_df = pd.read_csv(OUTPUT_DIR / "candidates.csv")
-            dv_new = [f"{r['code']} {r['name']}" for _, r in dv_df.iterrows()
+            dv_new = [f"{str(r['code']).zfill(6)} {r['name']}" for _, r in dv_df.iterrows()
                       if str(r['code']).zfill(6) not in held]
             if dv_new:
                 lines.append(f"[深价候选] 新票: {', '.join(dv_new[:5])}")
@@ -987,11 +987,11 @@ def daily_update() -> str:
             trend_file = OUTPUT_DIR / "trend_candidates.csv"
             if trend_file.exists():
                 tr_df = pd.read_csv(trend_file)
-                tr_new = [f"{r['code']} {r['name']}" for _, r in tr_df.iterrows()
+                tr_new = [f"{str(r['code']).zfill(6)} {r['name']}" for _, r in tr_df.iterrows()
                           if str(r['code']).zfill(6) not in held]
                 if tr_new:
                     lines.append(f"[趋势候选] 新票: {', '.join(tr_new[:5])}")
-                both = [f"{r['code']} {r['name']}" for _, r in tr_df.iterrows()
+                both = [f"{str(r['code']).zfill(6)} {r['name']}" for _, r in tr_df.iterrows()
                         if str(r['code']).zfill(6) in held]
                 if both:
                     lines.append(f"[趋势交叉] 已持有: {', '.join(both)}")
@@ -1113,16 +1113,16 @@ def daily_update() -> str:
 
     report = "\n".join(lines)
 
-    # 每日日报存档到 reports/
+    # 每日日报存档到 reports/（终端文本 → GitHub Markdown）
     try:
+        from .report_markdown import to_markdown, refresh_reports_index
         report_dir = OUTPUT_DIR / "reports"
         report_dir.mkdir(parents=True, exist_ok=True)
         daily_file = report_dir / f"daily_{today.strftime('%Y%m%d')}.md"
         with open(daily_file, "w", encoding="utf-8") as f:
             f.write(f"# 日报 — {today.strftime('%Y-%m-%d')}\n\n")
-            f.write("```\n")
-            f.write(report)
-            f.write("\n```\n")
+            f.write(to_markdown(report))
+        refresh_reports_index()
     except Exception:
         pass
 

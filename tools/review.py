@@ -13,6 +13,7 @@ from .account import VirtualAccount
 from .data_fetcher import fetch_market_water_level, fetch_daily_kline
 from .screener import load_candidates
 from .industry_analyzer import get_all_industry_scores, get_industry_distribution
+from .report_markdown import refresh_reports_index
 
 BASE_DIR = Path(__file__).parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
@@ -27,6 +28,13 @@ def load_config() -> dict:
 
 def _ensure_dir():
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _refresh_reports_index_safe() -> None:
+    try:
+        refresh_reports_index()
+    except Exception:
+        pass
 
 
 def _exit_info(pos, cfg=None) -> str:
@@ -359,6 +367,7 @@ def weekly_review(acc: VirtualAccount = None) -> str:
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(report)
 
+    _refresh_reports_index_safe()
     return report
 
 
@@ -507,6 +516,7 @@ def monthly_review(acc: VirtualAccount = None, target_month: date = None) -> str
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(report)
 
+    _refresh_reports_index_safe()
     return report
 
 
@@ -654,6 +664,7 @@ def trend_weekly_review() -> str:
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(report)
 
+    _refresh_reports_index_safe()
     return report
 
 
@@ -805,6 +816,7 @@ def trend_monthly_review(target_month: date = None) -> str:
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(report)
 
+    _refresh_reports_index_safe()
     return report
 
 

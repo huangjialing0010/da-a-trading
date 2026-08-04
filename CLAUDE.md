@@ -47,7 +47,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
   - `trend_cooling_off.json` — 趋势仓止损冷却名单（硬止损/MA200卖出后20交易日禁止重新入场）
   - `backtest/` — 回测结果
   - `logs/` — 每日运行日志
-  - `reports/` — 周报/月报（含趋势独立报告）
+  - `reports/` — 周报/月报（含趋势独立报告）；`README.md` 为自动生成的报告索引
   - `research/` — 深度分析笔记（每只研究过的股票一文件，买入前必填）
   - `market_judgment_log.md` — 市场判断台账（每周五回填，验证系统判断命中率）
 - `tools/` — 核心模块
@@ -62,6 +62,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
   - `candidate_tracker.py` — 候选池假设性买入追踪（从入选到退出的虚拟盈亏闭环）
   - `backtest.py` — 回测引擎（消除前视偏差：财务数据按决策时点+报告延迟取；支持深价/趋势反转双模式）
   - `review.py` — 定期复盘（深价+趋势独立周报/月报 + 双策略组合总览）
+  - `report_markdown.py` — 日报终端文本转 GitHub Markdown + reports/README.md 索引刷新
 - `main.py` — CLI入口
 - `.github/workflows/daily.yml` — Actions日更（工作日17:30，timeout 45分钟）
 - `docs/CHANGES.md` — 变更记录（跨会话交接用）
@@ -137,7 +138,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 - 财务数据混合口径：ROE/CF/EPS取最新年报（12-31），利润/营收YoY取最新报告期（含季度），资产负债率取最新报告期
 - 选股K线拉取并行化（ThreadPoolExecutor 10线程），K线内存缓存防重复拉取
 - 日更：`python main.py daily`（本地）或 Actions 自动（工作日17:30），本地~60秒，Actions ~12分钟
-- 日报输出表格化（`_format_table`，CJK字符宽度感知），7个分区：深价持仓→候选池→候选追踪(含分析结论+汇总)→研究结论速览→市场水位→趋势持仓→待深度分析；研究结论速览每只候选带策略标签（深价/趋势）
+- 日报输出表格化（`_format_table`，CJK字符宽度感知），7个分区：深价持仓→候选池→候选追踪(含分析结论+汇总)→研究结论速览→市场水位→趋势持仓→待深度分析；研究结论速览每只候选带策略标签（深价/趋势）；终端打印保持表格化，存档改为 Markdown（`##` 分区 + 标准表格，GitHub 友好）；`output/reports/README.md` 每次生成报告后自动刷新索引
 - 容错：`data_fetcher.py` 全局 monkey-patch requests 设 15s 超时，所有网络调用加 try/except，失败降级到缓存
 - 基准价获取：缓存优先（当日缓存直接读）；缺当日数据时以新浪 `stock_zh_index_daily` 为主、东财 `stock_zh_index_daily_em` 兜底；全部失败打印告警并沿用缓存，避免静默失真
 - 参数化：策略阈值统一放 config.yaml
