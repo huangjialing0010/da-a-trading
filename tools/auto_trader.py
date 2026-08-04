@@ -1014,7 +1014,11 @@ def daily_update() -> str:
         from .candidate_tracker import get_conclusion_map
 
         code_to_name: dict[str, str] = {}
-        for csv_file in [OUTPUT_DIR / "candidates.csv", OUTPUT_DIR / "trend_candidates.csv"]:
+        code_strategies: dict[str, set[str]] = {}
+        for csv_file, strat_label in [
+            (OUTPUT_DIR / "candidates.csv", "深价"),
+            (OUTPUT_DIR / "trend_candidates.csv", "趋势"),
+        ]:
             if csv_file.exists():
                 import pandas as pd
                 df = pd.read_csv(csv_file)
@@ -1022,6 +1026,11 @@ def daily_update() -> str:
                     c = str(int(r["code"])).zfill(6)
                     if c not in code_to_name:
                         code_to_name[c] = str(r["name"])
+                    code_strategies.setdefault(c, set()).add(strat_label)
+
+        def _strategy_tag(c: str) -> str:
+            labels = [l for l in ("深价", "趋势") if l in code_strategies.get(c, set())]
+            return "+".join(labels) if labels else "?"
 
         if code_to_name:
             all_codes = list(code_to_name.keys())
@@ -1039,7 +1048,7 @@ def daily_update() -> str:
                 lines.append(f"\n  [建议买入/持有] {len(buy_codes)}只")
                 for c in buy_codes:
                     n = code_to_name.get(c, c)
-                    lines.append(f"    {c} {_pad_str(n, 10)} — {cmap[c]}")
+                    lines.append(f"    {c} {_pad_str(n, 10)} [{_strategy_tag(c)}] — {cmap[c]}")
             else:
                 lines.append(f"\n  [建议买入/持有] 当前无买入建议候选")
 
@@ -1047,19 +1056,19 @@ def daily_update() -> str:
                 lines.append(f"\n  [观望] {len(watch_codes)}只")
                 for c in watch_codes:
                     n = code_to_name.get(c, c)
-                    lines.append(f"    {c} {_pad_str(n, 10)}")
+                    lines.append(f"    {c} {_pad_str(n, 10)} [{_strategy_tag(c)}]")
 
             if elim_codes:
                 lines.append(f"\n  [淘汰] {len(elim_codes)}只")
                 for c in elim_codes:
                     n = code_to_name.get(c, c)
-                    lines.append(f"    {c} {_pad_str(n, 10)}")
+                    lines.append(f"    {c} {_pad_str(n, 10)} [{_strategy_tag(c)}]")
 
             if unknown:
                 lines.append(f"\n  [待分析] {len(unknown)}只 — 缺少研究笔记或结论不明")
                 for c in unknown:
                     n = code_to_name.get(c, c)
-                    lines.append(f"    {c} {_pad_str(n, 10)}")
+                    lines.append(f"    {c} {_pad_str(n, 10)} [{_strategy_tag(c)}]")
     except Exception as e:
         lines.append(f"\n[研究结论速览] 失败: {e}")
 
