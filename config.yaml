@@ -25,6 +25,14 @@ account:
   max_total_position_pct: 0.80  # 总仓位上限（极端行情）
   normal_total_position_pct: 0.50  # 正常总仓位上限
 
+# === 交易成本模型（2026-08-04 起生效，历史交易不追溯；仅自动日更账户启用） ===
+costs:
+  commission_rate: 0.00025   # 佣金万2.5（买卖双向）
+  min_commission: 5.0        # 单笔最低佣金（元）
+  stamp_tax: 0.0005          # 印花税（仅卖出，0.05%）
+  slippage: 0.001            # 滑点（买入加价、卖出减价）
+  limit_day_skip: true       # 一字板近似：开=高=低且方向不利时跳过成交
+
 # === 深度价值策略（主力） ===
 deep_value:
   min_market_cap: 50            # 最低市值（亿），筛掉壳股庄股

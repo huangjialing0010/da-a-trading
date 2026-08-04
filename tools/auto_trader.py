@@ -115,6 +115,28 @@ def _benchmark_last_date() -> str:
     return ""
 
 
+def _limit_locked(kline: "pd.DataFrame", side: str) -> bool:
+    """一字板近似：开=高=低且方向不利时无法成交。side: buy/sell"""
+    if kline is None or kline.empty or len(kline) < 2:
+        return False
+    last = kline.iloc[-1]
+    try:
+        o = float(last["开盘"])
+        h = float(last["最高"])
+        l = float(last["最低"])
+        close = float(last["收盘"])
+        prev_close = float(kline["收盘"].iloc[-2])
+    except Exception:
+        return False
+    if not (o == h == l and close == o):
+        return False
+    if side == "buy":
+        return close > prev_close
+    if side == "sell":
+        return close < prev_close
+    return False
+
+
 def _get_kline(code: str, ttl_days: int = 1) -> "pd.DataFrame":
     """fetch_daily_kline 的内存缓存包装。ttl_days=0 首次拉取后缓存。"""
     import pandas as pd
@@ -246,10 +268,10 @@ def trend_daily_update() -> str:
     # 加载/初始化趋势账户
     import os as _os
     if not _os.path.exists(TREND_ACCOUNT_FILE):
-        acc = VirtualAccount.init_with_cash(1_000_000, TREND_ACCOUNT_FILE)
+        acc = VirtualAccount.init_with_cash(1_000_000, TREND_ACCOUNT_FILE, costs_enabled=True)
         lines.append("初始化: ¥1,000,000")
     else:
-        acc = VirtualAccount(TREND_ACCOUNT_FILE)
+        acc = VirtualAccount(TREND_ACCOUNT_FILE, costs_enabled=True)
 
     # 读取趋势候选
     import pandas as pd
@@ -318,6 +340,10 @@ def trend_daily_update() -> str:
     for pos in list(acc.get_holdings()):
         price = pos.current_price
         if price <= 0:
+            continue
+        kline = _get_kline(pos.code, ttl_days=0)
+        if _limit_locked(kline, "sell"):
+            lines.append(f"  [无法成交] {pos.name} 一字跌停，今日无法卖出")
             continue
         pnl = price / pos.avg_cost - 1
         held_days = (today - datetime.strptime(
@@ -407,6 +433,8 @@ def trend_daily_update() -> str:
             kline = fetch_daily_kline(code)
             if kline.empty or len(kline) < 250:
                 continue
+            if _limit_locked(kline, "buy"):
+                continue  # 一字涨停买不进
             price_now = float(kline["收盘"].iloc[-1])
             high_52w = float(kline["最高"].tail(250).max())
             if high_52w > 0 and price_now > high_52w * 0.90:
@@ -614,7 +642,7 @@ def _market_monitor() -> list[str]:
 def daily_update() -> str:
     socket.setdefaulttimeout(15)  # 所有网络调用15秒超时, 防止akshare API卡死
     lines = []
-    acc = VirtualAccount()
+    acc = VirtualAccount(costs_enabled=True)
     today = date.today()
     batch_state = _load_batch_state()
 
@@ -701,7 +729,11 @@ def daily_update() -> str:
                         continue  # 跳过，不执行
 
             # 执行卖出
-            price = s.price if s.price > 0 else float(_get_kline(code).iloc[-1]["收盘"])
+            kline = _get_kline(code)
+            if _limit_locked(kline, "sell"):
+                lines.append(f"  [无法成交] {s.name} 一字跌停，今日无法卖出")
+                continue
+            price = s.price if s.price > 0 else float(kline.iloc[-1]["收盘"])
             qty = s.quantity if s.quantity > 0 else acc.get_position(code).quantity
             ok, msg = acc.sell(code, price, qty, s.reason)
             lines.append(f"  [卖出] {msg}")
@@ -735,6 +767,9 @@ def daily_update() -> str:
                 continue
             current = float(kline.iloc[-1]["收盘"])
             if current <= trigger:
+                if _limit_locked(kline, "buy"):
+                    lines.append(f"  [无法成交] {cfg['name']} 一字涨停，无法加仓")
+                    continue
                 qty = next_batch["qty"]
                 price = current
                 ok, msg = acc.buy(code, cfg["name"], price, qty, "deep_value",
@@ -764,6 +799,9 @@ def daily_update() -> str:
             volume_ok = cur_vol > vol_ma20 * 1.2
 
             if above_ma20 and ma60_flatting and volume_ok:
+                if _limit_locked(kline, "buy"):
+                    lines.append(f"  [无法成交] {cfg['name']} 一字涨停，无法加仓")
+                    continue
                 qty = next_batch["qty"]
                 ok, msg = acc.buy(code, cfg["name"], current, qty, "deep_value",
                                   f"第{batch_num+1}批加仓: 企稳确认 (站上MA20, 60日线走平, 放量)")

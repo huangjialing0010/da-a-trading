@@ -10,6 +10,25 @@ ACCOUNT_FILE = os.path.join(os.path.dirname(__file__), "..", "output", "account.
 TRADES_CSV = os.path.join(os.path.dirname(__file__), "..", "output", "trades.csv")
 
 
+def _load_costs_config() -> dict:
+    """读取 config.yaml 的交易成本参数，读取失败用保守默认值。"""
+    defaults = {
+        "commission_rate": 0.00025,
+        "min_commission": 5.0,
+        "stamp_tax": 0.0005,
+        "slippage": 0.001,
+        "limit_day_skip": True,
+    }
+    try:
+        import yaml
+        cfg_path = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return {**defaults, **cfg.get("costs", {})}
+    except Exception:
+        return defaults
+
+
 @dataclass
 class Position:
     code: str
@@ -76,16 +95,19 @@ class AccountState:
 class VirtualAccount:
     """虚拟账户，所有状态持久化到 JSON"""
 
-    def __init__(self, file_path: str | None = None):
+    def __init__(self, file_path: str | None = None, costs_enabled: bool = False):
         self._file_path = file_path or ACCOUNT_FILE
+        self.costs_enabled = costs_enabled
         self.state: AccountState = self._load()
 
     @classmethod
-    def init_with_cash(cls, amount: float, file_path: str | None = None) -> "VirtualAccount":
+    def init_with_cash(cls, amount: float, file_path: str | None = None,
+                       costs_enabled: bool = False) -> "VirtualAccount":
         """首次初始化，清空旧状态"""
         state = AccountState(cash=amount)
         acc = cls.__new__(cls)
         acc._file_path = file_path or ACCOUNT_FILE
+        acc.costs_enabled = costs_enabled
         acc.state = state
         acc._save()
         return acc
@@ -150,34 +172,46 @@ class VirtualAccount:
     def buy(self, code: str, name: str, price: float, quantity: int,
             strategy: str, reason: str) -> tuple[bool, str]:
         """买入。返回 (成功?, 消息)"""
-        cost = price * quantity
-        if cost > self.state.cash:
-            return False, f"现金不足：需要 ¥{cost:,.0f}，可用 ¥{self.state.cash:,.0f}"
-
         if quantity % 100 != 0:
             return False, "A股最小交易单位100股"
 
+        exec_price = price
+        fee = 0.0
+        if self.costs_enabled:
+            cfg = _load_costs_config()
+            exec_price = price * (1 + cfg["slippage"])
+
+        gross = exec_price * quantity
+        if self.costs_enabled:
+            fee = max(gross * cfg["commission_rate"], cfg["min_commission"])
+        total = gross + fee
+        if total > self.state.cash:
+            return False, f"现金不足：需要 ¥{total:,.0f}，可用 ¥{self.state.cash:,.0f}"
+
         # 检查单票仓位上限（config 在 signal_engine 层检查，这里做二次校验）
-        self.state.cash -= cost
+        self.state.cash -= total
 
         if code in self.state.positions:
             pos = self.state.positions[code]
             total_qty = pos.quantity + quantity
-            pos.avg_cost = (pos.cost_value + cost) / total_qty
+            pos.avg_cost = (pos.cost_value + total) / total_qty
             pos.quantity = total_qty
         else:
             self.state.positions[code] = Position(
                 code=code, name=name, quantity=quantity,
-                avg_cost=price, current_price=price, strategy=strategy
+                avg_cost=total / quantity, current_price=exec_price, strategy=strategy
             )
 
         trade = Trade(
             time=datetime.now().isoformat(), code=code, name=name,
-            direction="BUY", price=price, quantity=quantity, reason=reason
+            direction="BUY", price=exec_price, quantity=quantity, reason=reason
         )
         self.state.trades.append(trade)
         self._save()
-        return True, f"买入 {name}({code}) {quantity}股 @ ¥{price:.2f}"
+        msg = f"买入 {name}({code}) {quantity}股 @ ¥{exec_price:.2f}"
+        if fee:
+            msg += f"（含费用 ¥{fee:.2f}）"
+        return True, msg
 
     def sell(self, code: str, price: float, quantity: int,
              reason: str) -> tuple[bool, str]:
@@ -192,21 +226,33 @@ class VirtualAccount:
         if quantity % 100 != 0 and quantity != pos.quantity:
             return False, "A股最小交易单位100股，或清仓"
 
-        proceeds = price * quantity
-        self.state.cash += proceeds
+        exec_price = price
+        fee = 0.0
+        if self.costs_enabled:
+            cfg = _load_costs_config()
+            exec_price = price * (1 - cfg["slippage"])
+            gross = exec_price * quantity
+            fee = max(gross * cfg["commission_rate"], cfg["min_commission"]) + gross * cfg["stamp_tax"]
 
-        pnl = (price - pos.avg_cost) * quantity
+        proceeds = exec_price * quantity
+        net = proceeds - fee
+        self.state.cash += net
+
+        pnl = net - pos.avg_cost * quantity
         pos.quantity -= quantity
         if pos.quantity <= 0:
             del self.state.positions[code]
 
         trade = Trade(
             time=datetime.now().isoformat(), code=code, name=pos.name,
-            direction="SELL", price=price, quantity=quantity, reason=reason, pnl=pnl
+            direction="SELL", price=exec_price, quantity=quantity, reason=reason, pnl=pnl
         )
         self.state.trades.append(trade)
         self._save()
-        return True, f"卖出 {pos.name}({code}) {quantity}股 @ ¥{price:.2f}，盈亏 ¥{pnl:,.2f}"
+        msg = f"卖出 {pos.name}({code}) {quantity}股 @ ¥{exec_price:.2f}，盈亏 ¥{pnl:,.2f}"
+        if fee:
+            msg += f"（含费用 ¥{fee:.2f}）"
+        return True, msg
 
     def update_price(self, code: str, price: float):
         """更新持仓市价"""
