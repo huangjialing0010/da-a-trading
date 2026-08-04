@@ -1036,7 +1036,8 @@ def daily_update() -> str:
             all_codes = list(code_to_name.keys())
             cmap = get_conclusion_map(all_codes)
 
-            buy_codes   = [c for c in all_codes if cmap.get(c, "?") in ("买入", "持有")]
+            buy_codes   = [c for c in all_codes if cmap.get(c, "?") == "买入"]
+            hold_codes  = [c for c in all_codes if cmap.get(c, "?") == "持有"]
             watch_codes = [c for c in all_codes if cmap.get(c, "?") == "观望"]
             elim_codes  = [c for c in all_codes if cmap.get(c, "?") == "淘汰"]
             unknown     = [c for c in all_codes if cmap.get(c, "?") in ("?", "未分析")]
@@ -1045,12 +1046,17 @@ def daily_update() -> str:
             lines.append(f"  候选池共 {len(all_codes)} 只，已分析 {len(all_codes) - len(unknown)} 只")
 
             if buy_codes:
-                lines.append(f"\n  [建议买入/持有] {len(buy_codes)}只")
+                lines.append(f"\n  [建议买入] {len(buy_codes)}只")
                 for c in buy_codes:
                     n = code_to_name.get(c, c)
-                    lines.append(f"    {c} {_pad_str(n, 10)} [{_strategy_tag(c)}] — {cmap[c]}")
-            else:
-                lines.append(f"\n  [建议买入/持有] 当前无买入建议候选")
+                    lines.append(f"    {c} {_pad_str(n, 10)} [{_strategy_tag(c)}]")
+            if hold_codes:
+                lines.append(f"\n  [继续持有] {len(hold_codes)}只")
+                for c in hold_codes:
+                    n = code_to_name.get(c, c)
+                    lines.append(f"    {c} {_pad_str(n, 10)} [{_strategy_tag(c)}]")
+            if not buy_codes and not hold_codes:
+                lines.append(f"\n  [建议买入] 当前无买入/持有结论候选")
 
             if watch_codes:
                 lines.append(f"\n  [观望] {len(watch_codes)}只")
