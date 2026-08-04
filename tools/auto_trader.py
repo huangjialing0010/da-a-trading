@@ -47,6 +47,7 @@ def _get_benchmark_price(today: date) -> float:
     import pandas as pd
     bm_cache_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
     fallback = 0.0
+    last_date = ""
 
     # 1. 读缓存，检查是否已有当日数据
     if bm_cache_file.exists():
@@ -63,21 +64,42 @@ def _get_benchmark_price(today: date) -> float:
         except Exception:
             pass
 
-    # 2. 缓存缺当日数据，尝试拉一次网络
-    try:
-        import akshare as ak
-        bm_df = ak.stock_zh_index_daily_em(symbol="sh000300")
-        if bm_df is not None and not bm_df.empty:
-            bm_df.columns = [c.lower() for c in bm_df.columns]
+    # 2. 缓存缺当日数据，尝试拉一次网络（新浪为主，东财兜底）
+    bm_df = _fetch_benchmark_df()
+    if bm_df is not None:
+        try:
+            bm_cache_file.parent.mkdir(parents=True, exist_ok=True)
             bm_df.to_csv(bm_cache_file, encoding="utf-8")
             _bm_price_cache = float(bm_df["close"].iloc[-1])
             return _bm_price_cache
-    except Exception:
-        pass
+        except Exception:
+            pass
 
-    # 3. 网络失败，用缓存兜底
+    # 3. 网络失败，用缓存兜底并告警，避免静默失真
     _bm_price_cache = fallback
+    if fallback > 0:
+        print(f"[警告] 沪深300基准更新失败，使用缓存价 {fallback:.2f}（缓存日期 {last_date}），超额计算可能失真")
+    else:
+        print("[警告] 沪深300基准更新失败，且无缓存可用")
     return _bm_price_cache
+
+
+def _fetch_benchmark_df() -> "pd.DataFrame | None":
+    """沪深300日线：新浪数据源为主（稳定），东方财富兜底。"""
+    import akshare as ak
+    sources = [
+        (ak.stock_zh_index_daily, {"symbol": "sh000300"}),
+        (ak.stock_zh_index_daily_em, {"symbol": "sh000300"}),
+    ]
+    for func, kwargs in sources:
+        try:
+            df = func(**kwargs)
+            if df is not None and not df.empty:
+                df.columns = [c.lower() for c in df.columns]
+                return df
+        except Exception:
+            continue
+    return None
 
 
 def _get_kline(code: str, ttl_days: int = 1) -> "pd.DataFrame":

@@ -19,6 +19,9 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 
 深价仓暂停新买入，待ERP分位仓位规则落地后解除。趋势仓纸上测试，非实盘。日更输出清晰分区：`═══ 深价仓 ═══` / `═══ 趋势虚拟仓（纸上测试） ═══`
 
+## 最近变更 / 交接记录
+- 2026-08-04（Codex）修复沪深300基准价自 2026-07-24 起冻结：`tools/auto_trader.py` 的 `_get_benchmark_price` 改用新浪 `stock_zh_index_daily` 为主、东方财富 `stock_zh_index_daily_em` 兜底；网络失败时打印告警，不再静默沿用旧缓存。根因：东财接口持续 `RemoteDisconnected` 拒连，旧代码 `except Exception: pass` 吞掉异常。待办：收盘后补跑日更（17:30 Actions 自动执行），确认 `data/market/benchmark_000300.csv` 恢复每日更新。
+
 ## 目录结构
 - `config.yaml` — 策略可调参数 + 回测结论摘要
 - `data/` — 原始数据缓存
@@ -130,7 +133,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 - 日更：`python main.py daily`（本地）或 Actions 自动（工作日17:30），本地~60秒，Actions ~12分钟
 - 日报输出表格化（`_format_table`，CJK字符宽度感知），7个分区：深价持仓→候选池→候选追踪(含分析结论+汇总)→研究结论速览→市场水位→趋势持仓→待深度分析
 - 容错：`data_fetcher.py` 全局 monkey-patch requests 设 15s 超时，所有网络调用加 try/except，失败降级到缓存
-- 基准价获取：缓存优先（当日缓存直接读），跳过实时调用避免 Eastmoney API 拒连卡死
+- 基准价获取：缓存优先（当日缓存直接读）；缺当日数据时以新浪 `stock_zh_index_daily` 为主、东财 `stock_zh_index_daily_em` 兜底；全部失败打印告警并沿用缓存，避免静默失真
 - 参数化：策略阈值统一放 config.yaml
 - git：`data/daily_kline/` 和 `data/financials/` 不入库；`data/market/` 和 `output/`（含 `research/`）入库存档；每次日更后提交
 - 改策略参数前先跑回测验证，回测支持 `config_overrides` 参数覆盖和 `mode` 切换
