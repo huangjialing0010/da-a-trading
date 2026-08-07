@@ -428,19 +428,36 @@ def _check_industry_limit(code: str, acc: VirtualAccount) -> tuple[bool, str]:
 
 def _check_erp_position_cap(acc: VirtualAccount, erp: float | None = None) -> tuple[bool, str]:
     """ERP 分位动态仓位上限校验：当前仓位高于上限时禁止买入/加仓。"""
+    total_value = acc.state.total_value
+    pos_ratio = acc.state.total_market_value / total_value if total_value > 0 else 0
     try:
         from .data_fetcher import get_erp_position_cap
         cap_info = get_erp_position_cap(erp)
         cap = cap_info["cap"]
-        total_value = acc.state.total_value
-        pos_ratio = acc.state.total_market_value / total_value if total_value > 0 else 0
         if pos_ratio > cap + 1e-9:
             return False, (f"仓位{pos_ratio:.1%} > ERP上限{cap:.0%}"
                            f"（{cap_info['level']}，分位{cap_info['pct']:.0f}%，{cap_info['method']}法），"
                            f"超限禁止买入/加仓")
         return True, ""
-    except Exception:
-        return True, ""  # 数据异常时放行，避免网络故障阻断交易
+    except Exception as exc:
+        fallback_cap = 0.30
+        degradation = (
+            f"ERP数据异常({type(exc).__name__})，降级按保守上限{fallback_cap:.0%}"
+        )
+        if pos_ratio > fallback_cap + 1e-9:
+            return False, (
+                f"仓位{pos_ratio:.1%} > {degradation}，超限禁止买入/加仓"
+            )
+        return True, degradation
+
+
+def _format_erp_investment_status(allowed: bool, message: str) -> str:
+    """渲染深价漏斗的 ERP 新增资金状态，保留异常降级信息。"""
+    if not allowed:
+        return f"新增资金投入允许数=0（{message}）"
+    if message:
+        return f"允许新增资金投入（{message}）"
+    return "允许新增资金投入"
 
 
 TREND_ACCOUNT_FILE = str(OUTPUT_DIR / "account_trend.json")
@@ -1377,10 +1394,7 @@ def daily_update() -> str:
     candidate_text = "不可用" if deep_candidate_count is None else str(deep_candidate_count)
     total_value = acc.state.total_value
     pos_ratio = acc.state.total_market_value / total_value if total_value > 0 else 0.0
-    if erp_cap_ok:
-        erp_text = "允许新增资金投入"
-    else:
-        erp_text = f"新增资金投入允许数=0（{erp_cap_msg}）"
+    erp_text = _format_erp_investment_status(erp_cap_ok, erp_cap_msg)
     lines.append("\n═══ 深价交易漏斗 ═══")
     lines.append(
         f"  状态：持仓{acc.state.position_count}只 | 仓位{pos_ratio:.1%} | {erp_text}"
