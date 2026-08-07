@@ -2,74 +2,39 @@
 
 ## 项目定位
 A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟。
-**双策略并行**：深价策略（左侧交易仓，优化中，回测+46%）+ 趋势反转策略（右侧交易仓，纸上验证中，回测+79%）。
-趋势仓继续纸上测试到 2027-01。深价策略经全300池+营收过滤优化后回测显著改善；ERP 分位动态仓位上限+行业集中度已接入买入路径（2026-08-04），新买入按估值闸门执行，不再一刀切冻结。
-深价仓=左侧：越跌越有价值、分批建仓，赚均值回归；趋势仓=右侧：趋势改善确认后追入，赚动量延续。两仓独立运行、资金不混合。
-系统缩小候选范围，人做最终买入决定。筛选器只是初筛，不替代深度分析。所有买入决策必须有书面分析记录。
+**双策略并行**：深价仓做左侧均值回归，趋势 V2 做右侧盈利改善验证；两仓账户、资金和表现完全隔离。
+趋势 V2 于 2026-08-07 从 200 万空仓启动，最早 2027-02-07 审查。深价仓受 ERP 分位仓位上限与行业集中度约束。
+系统缩小候选范围，筛选器只是初筛。深价新开仓当前由人做最终决定并要求书面分析；趋势 V2 按冻结的原策略自动执行，仅供纸上验证，允许尚未完成增强研究。
 
 ## 双仓架构
 | | 深价仓 | 趋势虚拟仓（纸上验证） |
 |------|----------|------------|
 | 账户文件 | `account.json` | `account_trend_v2.json`（旧 `account_trend.json` 只读） |
-| 资金 | 100万（已用~38万，62万现金按 ERP 上限择机配置） | 200万（纸上） |
+| 资金 | 100万初始资金；当前状态以最新日报为准 | 200万初始资金（纸上） |
 | 策略 | 跌40%+营收正增长+财报好，人工买入 | 利润趋势改善+质量过滤，自动执行 |
 | 候选池 | `candidates.csv` | `trend_candidates.csv` |
 | 交易记录 | `trades.csv` | `trades_trend_v2.csv` |
 | 表现追踪 | `performance.csv` | `performance_trend_v2.csv` |
 | 复盘 | `weekly_*.md` / `monthly_*.md` | `trend_weekly_*.md` / `trend_monthly_*.md` |
 
-深价仓新买入受 ERP 分位动态仓位上限+行业集中度约束（超限禁止买入/加仓），市场便宜时放开、贵时收紧，不再一刀切冻结。趋势仓纸上测试，非实盘。日更输出清晰分区：`═══ 深价仓 ═══` / `═══ 趋势虚拟仓（纸上测试） ═══`
+深价仓新投入受 ERP 动态上限与行业集中度约束；超限不强制卖出现有持仓。趋势仓仅做纸上验证，非实盘。
 
-## 变更与交接记录
-当前状态（2026-08-07）：自动交易统一改为 T 日收盘生成订单、T+1 明确交易日开盘模拟成交；趋势验证启用 200 万空仓 V2，旧趋势账户只读保留。买单仅计划日有效，卖单受阻持续重试；同一开盘卖出款不得给买单补资金。详细历史见 `docs/CHANGES.md`。
+## 文档路由
+- 使用入口与安全规则：`README.md`
+- 设计状态索引：`docs/README.md`
+- 已落地变更与未完成事项：`docs/CHANGES.md`
+- 详细设计依据：`docs/superpowers/specs/`
 
 ## 目录结构
-- `config.yaml` — 策略可调参数 + 回测结论摘要
-- `data/` — 原始数据缓存
-  - `daily_kline/` — 日K线（不入 git）
-  - `financials/` — 财务数据（不入 git，含raw/子目录，趋势扫描用原始DataFrame）
-  - `market/` — 市场水位数据 + 沪深300基准缓存（入 git，Actions 需要）
-- `output/` — 输出文件
-  - `account.json` — 深价主仓（含交易记录 + 净值快照）
-  - `account_trend_v2.json` — 当前趋势 V2 虚拟仓（200万空仓起步）
-  - `account_trend.json` — 旧趋势虚拟仓（只读历史快照）
-  - `candidates.csv` — 深价候选池（周五全量财务验证）
-  - `candidates_quick.csv` — 深价候选快照（每日快速，仅量价）
-  - `trend_candidates.csv` — 趋势改善候选池（每日扫描，研究工具）
-  - `signals.csv` — 当前信号
-  - `holdings.csv` — 持仓快照
-  - `trades.csv` — 深价仓交易记录
-  - `trades_trend_v2.csv` — 当前趋势 V2 交易记录
-  - `performance.csv` — 深价仓每日表现vs基准
-  - `performance_trend_v2.csv` — 当前趋势 V2 每日表现vs基准
-  - `paper_orders.json` / `paper_orders_trend_v2.json` — 深价/趋势 T+1 模拟订单账本
-  - `candidate_tracker.csv` — 候选池假设性买入追踪（入场价/现价/盈亏/最大回撤，每日更新）
-  - `batch_state.json` — 分批建仓计划（自动维护）
-  - `panic_state.json` — 恐慌策略状态（自动维护）
-  - `trend_cooling_off_v2.json` — 趋势 V2 止损冷却名单（硬止损/MA200卖出成交后20交易日禁止重新入场）；旧文件只读保留
-  - `backtest/` — 回测结果
-  - `logs/` — 每日运行日志
-  - `reports/` — 周报/月报（含趋势独立报告）；`README.md` 为自动生成的报告索引
-  - `research/` — 深度分析笔记（每只研究过的股票一文件，买入前必填）
-  - `market_judgment_log.md` — 市场判断台账（每周五回填，验证系统判断命中率）
-- `tools/` — 核心模块
-  - `account.py` — 虚拟账户（支持多仓独立路径）
-  - `paper_orders.py` — T+1 模拟订单状态机（挂单、阻塞、成交、取消）
-  - `data_fetcher.py` — 数据获取（akshare + 本地缓存，财务数据混合口径：ROE/CF/EPS用年报、利润/营收YoY用最新报告期）
-  - `screener.py` — 选股筛选（深价+趋势改善双扫描，并行K线拉取）
-  - `signal_engine.py` — 信号生成（MA200止损替代旧版时间止损，基本面检查直接用profit_yoy）
-  - `auto_trader.py` — 自动交易引擎（深价主仓+趋势虚拟仓，含表现追踪+候选摘要+候选假设性追踪）
-  - `industry_analyzer.py` — 行业分析（手工黑名单 + 申万二级量化评分）
-  - `industry_data.py` — 申万行业分类（二级131类）+PE/PB
-  - `commodity_fetcher.py` — 商品期货周期检测
-  - `candidate_tracker.py` — 候选池假设性买入追踪（从入选到退出的虚拟盈亏闭环）
-  - `backtest.py` — 回测引擎（消除前视偏差：财务数据按决策时点+报告延迟取；支持深价/趋势反转双模式）
-  - `review.py` — 定期复盘（深价+趋势独立周报/月报 + 双策略组合总览）
-  - `report_markdown.py` — 日报终端文本转 GitHub Markdown + reports/README.md 索引刷新
-- `main.py` — CLI入口
-- `requirements.txt` — Python 3.12 已验证依赖锁
-- `.github/workflows/daily.yml` — Actions日更（工作日17:30，timeout 45分钟；全量测试通过后才运行；并发串行；只缓存 `financials/` 与 `sw_index/`）
-- `docs/CHANGES.md` — 变更记录（跨会话交接用）
+- `config.yaml`：策略参数与回测摘要。
+- `data/`：行情、财务和市场缓存；只有 `data/market/` 入 Git，日K线与财务缓存不入 Git。
+- `output/account*.json`、`trades*.csv`、`performance*.csv`：双仓账户、成交和表现。
+- `output/paper_orders*.json`：T+1 订单审计账本；历史订单不得删除。
+- `output/candidates*.csv`、`trend_candidates.csv`、`candidate_tracker.csv`：候选与前瞻追踪。
+- `output/research/`：书面研究；`output/reports/`：日报、周报、月报和索引。
+- `tools/`：账户、订单、数据、筛选、信号、交易、验证和报告模块。
+- `tests/`：标准库 `unittest`；`.github/workflows/daily.yml`：工作日自动日更。
+- `main.py`：CLI；`requirements.txt`：Python 3.12 依赖锁。
 
 ## 回测结论（2026-07-24更新，全300池+营收过滤）
 - **深价策略（全300，营收<0淘汰）**：+46.4% vs 基准+60.1%，超额-13.7pp，256笔交易，胜率34.2%，盈亏比2.58，最大回撤-35.3%
@@ -117,7 +82,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 
 ## 筛选流程
 **深价池**：量价初筛（跌幅≥40%+缩量+低价分位）→ 商品周期检测 → 行业过滤 → 财务验证 → `candidates.csv`
-**趋势池**：全池扫描 → 同报告期利润YoY改善排序 → 质量过滤 → `trend_candidates.csv`（研究工具，不入自动交易）
+**趋势池**：经校验的沪深300母集 → 同报告期利润YoY改善 → 质量过滤 → TOP10 → `trend_candidates.csv`。趋势 V2 原策略会自动消费该文件；增强研究结论不改变 V2 订单。
 
 ## 候选池追踪（假设性买入）
 - 每只候选从首次入选起记录虚拟买入（入场日期+入场价），每日更新盈亏、最大盈利、最大回撤
@@ -132,27 +97,30 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 - **决策日志**：每次研究后记录日期 + 结论（买入/观望/淘汰）+ 关键理由。事后对照实际走势，验证判断质量
 - 目录结构约定：`output/research/` 入 git，与候选池、持仓联动审查
 
-### CC 自动深度分析触发规则
-日更完成后，CC 自动检查 `candidates.csv` 和 `trend_candidates.csv` 中的候选，找出 `output/research/{代码}.md` 不存在的股票。如有待分析候选，自动启动深度分析：
+### AI 异步深度分析队列
+日更检查 `candidates.csv` 和 `trend_candidates.csv`，列出缺少 `output/research/{代码}.md` 的股票。该列表只是研究队列信号，GitHub Actions 不调用大模型，也不会自动完成研究；必须由独立的 Codex/人工研究任务接管：
 1. 读取该股票的日K线数据（`data/daily_kline/`）、最新财务数据（`data/financials/`）、行业分类（`data/market/stock_industry_map_v2.json`）
 2. 按 7 维度模板（业务驱动力/增长质量/竞争格局/管理层行为/问题可逆性/买入理由/不买理由）生成分析
 3. 写入 `output/research/{股票代码}.md`
 4. 汇报结论：建议买入/观望/淘汰，附关键理由
 
+最小选股增强目前仅完成日报隔离。深价三问、趋势两问结构化字段、研究有效期、深价新开仓准入和前瞻分组追踪仍未实施；实施边界见 `docs/superpowers/specs/2026-08-07-minimal-selection-enhancement-design.md`。在此之前不得宣称候选已通过五问。
+
 ## 开发约定
-- 日更后自动检查待分析候选：对比 `candidates.csv` + `trend_candidates.csv` 与 `output/research/` 已有文件，输出「待深度分析」列表。此列表即为 CC 自动分析触发信号
+- 日更后检查待分析候选并输出研究队列；GitHub Actions 不调用大模型，研究文件只能由独立 AI/人工任务写入
 - 数据源：akshare（免费）
 - 数据缓存：日K线TTL=1天，财务数据TTL=30天，趋势扫描原始DataFrame缓存30天
 - 财务数据混合口径：ROE/CF/EPS取最新年报（12-31），利润/营收YoY取最新报告期（含季度），资产负债率取最新报告期
 - 选股K线拉取并行化（ThreadPoolExecutor 10线程），K线内存缓存防重复拉取
 - 日更：`python main.py daily`（本地）或 Actions 自动（工作日17:30），本地~60秒，Actions ~12分钟
-- 日报输出表格化（`_format_table`，CJK字符宽度感知），7个分区：深价持仓→候选池→候选追踪(含分析结论+汇总)→研究结论速览→市场水位→趋势持仓→待深度分析；研究结论速览按「建议买入/继续持有/观望/淘汰/待分析」分组、每只候选带策略标签（深价/趋势）；终端打印保持表格化，存档改为 Markdown（`##` 分区 + 标准表格，GitHub 友好）；`output/reports/README.md` 每次生成报告后自动刷新索引
+- 日报明确隔离 `增强研究观察（不影响趋势 V2）` 与 `V2 明日执行清单（原策略）`；研究建议不得表述为 V2 订单，V2 订单也不得表述为已通过增强研究。终端保持表格化，存档转为 GitHub Markdown，并刷新 `output/reports/README.md`
 - 容错：`data_fetcher.py` 全局 monkey-patch requests 设 15s 超时，所有网络调用加 try/except，失败降级到缓存
 - 基准价获取：缓存优先（当日缓存直接读）；缺当日数据时以新浪 `stock_zh_index_daily` 为主、东财 `stock_zh_index_daily_em` 兜底；全部失败打印告警并沿用缓存，避免静默失真
 - 绝对交易日熔断：用新浪交易日历（`data/market/trade_calendar.csv`）和 Asia/Shanghai 16:30 截止线推导期望交易日；日历不可判定时双仓 fail-closed。深价仓、趋势仓分别核对全部持仓 K 线，任一缺失/过期只冻结对应仓的买卖及账户/持仓/表现写入，候选研究继续；趋势候选 K 线过期直接淘汰；沪深300基准过期只冻结基准/超额表现写入，不阻断数据新鲜仓的交易
 - 参数化：策略阈值统一放 config.yaml
 - 每周五复盘时回填 `output/market_judgment_log.md`：逐条判定历史市场判断命中/未命中/待验证，命中率是系统可靠性的唯一客观指标
 - 交易成本模型：自动日更账户启用佣金（万2.5，最低5元）/印花税（卖出0.05%）/滑点（0.1%）/一字板近似；参数在 `config.yaml` `costs`；历史交易不追溯，回测基线保持无成本
+- T+1 幂等：同一仓、同一方向、同一信号日一旦形成订单批次，当日重跑不得追加新标的；终结订单继续留在账本中审计
 - 周报/月报含双策略组合总览：组合口径=深价100万+趋势200万按初始资金权重合成，输出累计收益/最大回撤/年化波动率/日收益相关度；沪深300累计按基准缓存 close 计算（`performance*.csv` 中 7/24 起基准列沿用旧 4645.95 属历史口径）
 - git：`data/daily_kline/` 和 `data/financials/` 不入库；`data/market/` 和 `output/`（含 `research/`）入库存档；每次日更后提交
 - 改策略参数前先跑回测验证，回测支持 `config_overrides` 参数覆盖和 `mode` 切换
@@ -161,3 +129,4 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 - 趋势虚拟仓自动执行但仅供观察，不与主仓资金混合
 - ⚠️ PowerShell 5.1 读 UTF-8 无 BOM 脚本会吞中文
 - **已知缺陷**：screener 未处理拆股/送股复权，52周高点可能为除权前价格，导致跌幅虚高（例如同花顺10送4后真实跌26%被算成47%）。暂不处理，人工分析时复核
+- **已知缺陷**：Windows 默认 GBK 控制台可能在日更末尾打印 emoji 时触发 `UnicodeEncodeError`；PowerShell 运行前设置 `$env:PYTHONIOENCODING='utf-8'`。不得把输出异常误判为账户写入未发生
