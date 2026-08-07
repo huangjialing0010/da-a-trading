@@ -535,6 +535,13 @@ def _research_observation_intro() -> list[str]:
     ]
 
 
+def _pending_research_summary(count: int) -> str:
+    return (
+        f"  共 {int(count)} 只候选待分析；已生成研究队列，"
+        "需独立 AI/人工任务处理（GitHub Actions 不调用大模型）"
+    )
+
+
 def _legacy_trend_snapshot_text() -> str:
     """旧趋势账户只读快照，不参与 V2 组合净值。"""
     if not os.path.exists(LEGACY_TREND_ACCOUNT_FILE):
@@ -1797,7 +1804,7 @@ def daily_update() -> str:
             lines.append(f"\n═══ ⚠ 待深度分析 ═══")
             for code, name, label in pending:
                 lines.append(f"  [{label}] {code} {name} — 缺少 output/research/{code}.md")
-            lines.append(f"  共 {len(pending)} 只候选待分析，CC 将自动启动深度分析")
+            lines.append(_pending_research_summary(len(pending)))
     except Exception as e:
         lines.append(f"\n[待分析检查] 失败: {e}")
 

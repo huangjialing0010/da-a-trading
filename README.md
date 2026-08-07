@@ -24,7 +24,7 @@ python main.py weekly   # 周报
 python main.py monitor  # 持仓监控
 ```
 
-Windows PowerShell 运行日更前建议设置 `$env:PYTHONIOENCODING='utf-8'`，避免默认 GBK 控制台无法打印 emoji；这是输出兼容问题，不应通过跳过日更逻辑规避。
+CLI 会保留当前控制台编码，并把无法编码的 emoji 替换显示；Markdown 报告仍保留完整 UTF-8。Windows PowerShell 如需在终端完整显示 emoji，可额外设置 `$env:PYTHONIOENCODING='utf-8'`。
 
 ## 关键约定
 

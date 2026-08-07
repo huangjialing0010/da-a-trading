@@ -129,4 +129,4 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 - 趋势虚拟仓自动执行但仅供观察，不与主仓资金混合
 - ⚠️ PowerShell 5.1 读 UTF-8 无 BOM 脚本会吞中文
 - **已知缺陷**：screener 未处理拆股/送股复权，52周高点可能为除权前价格，导致跌幅虚高（例如同花顺10送4后真实跌26%被算成47%）。暂不处理，人工分析时复核
-- **已知缺陷**：Windows 默认 GBK 控制台可能在日更末尾打印 emoji 时触发 `UnicodeEncodeError`；PowerShell 运行前设置 `$env:PYTHONIOENCODING='utf-8'`。不得把输出异常误判为账户写入未发生
+- Windows 控制台保留当前编码并以替代字符显示无法编码的 emoji；Markdown 报告保持完整 UTF-8。需要完整终端符号时设置 `$env:PYTHONIOENCODING='utf-8'`

@@ -78,6 +78,53 @@ class PaperOrderBookTest(unittest.TestCase):
 
         self.assertTrue(self.book.has_signal_batch("2026-08-07", "BUY"))
 
+    def test_semantic_intent_dedupes_changed_payload_and_canceled_order(self):
+        first, created = self.create_buy(
+            metadata={"kind": "batch_add", "batch_number": 2}
+        )
+        first.status = "CANCELED"
+        self.book.save()
+
+        duplicate, created_again = self.create_buy(
+            quantity=900,
+            signal_reason="同一批次但行情变化",
+            metadata={"kind": "batch_add", "batch_number": 2},
+        )
+
+        self.assertTrue(created)
+        self.assertFalse(created_again)
+        self.assertEqual(duplicate.order_id, first.order_id)
+
+    def test_different_deep_intents_do_not_block_each_other(self):
+        first, _ = self.create_buy(
+            metadata={"kind": "batch_add", "batch_number": 2}
+        )
+        first.status = "FILLED"
+        self.book.save()
+
+        next_batch, next_created = self.create_buy(
+            quantity=900,
+            metadata={"kind": "batch_add", "batch_number": 3},
+        )
+        other_etf, etf_created = self.create_buy(
+            code="510300", name="沪深300ETF",
+            metadata={"kind": "panic_initial", "batch_number": 1},
+        )
+        sell, sell_created = self.book.create_order(
+            code="000001", name="平安银行", direction="SELL", quantity=900,
+            signal_trade_date="2026-08-07", planned_trade_date="2026-08-10",
+            signal_reason="降低风险", reference_close=9.0,
+            strategy="deep_value", position_qty_at_signal=900,
+            close_position=True, metadata={"kind": "deep_exit"},
+        )
+
+        self.assertTrue(next_created)
+        self.assertTrue(etf_created)
+        self.assertTrue(sell_created)
+        self.assertNotEqual(next_batch.order_id, first.order_id)
+        self.assertEqual(other_etf.code, "510300")
+        self.assertEqual(sell.direction, "SELL")
+
     def test_buy_fills_at_next_open_with_slippage_fee_and_trade_date(self):
         order, _ = self.create_buy()
         frame = kline([

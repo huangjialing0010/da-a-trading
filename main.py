@@ -19,10 +19,22 @@ import socket
 
 socket.setdefaulttimeout(30)  # 所有网络调用30秒超时，防止akshare卡死
 
-# 确保 UTF-8 输出
-if sys.stdout.encoding != "utf-8":
+def _configure_console_output(stream=None) -> bool:
+    """保留控制台编码，只降级无法编码的字符，避免末尾打印中断。"""
+    target = stream if stream is not None else sys.stdout
+    reconfigure = getattr(target, "reconfigure", None)
+    if reconfigure is None:
+        return False
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
+        reconfigure(errors="replace")
+        return True
+    except Exception:
+        return False
+
+
+if not _configure_console_output():
+    try:
+        sys.stderr.write("warning: console output encoding fallback unavailable\n")
     except Exception:
         pass
 

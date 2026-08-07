@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from tools.auto_trader import (
+    _pending_research_summary,
     _research_observation_intro,
     _trend_order_plan_text,
 )
@@ -32,6 +33,13 @@ class DailyReportClarityTest(unittest.TestCase):
         self.assertIn("增强研究观察", text)
         self.assertIn("不会生成或改变趋势 V2 订单", text)
         self.assertNotIn("═══ 研究结论速览 ═══", text)
+
+    def test_pending_research_text_does_not_promise_automatic_ai(self):
+        text = _pending_research_summary(7)
+
+        self.assertIn("已生成研究队列", text)
+        self.assertIn("独立 AI/人工任务", text)
+        self.assertNotIn("自动启动", text)
 
 
 if __name__ == "__main__":

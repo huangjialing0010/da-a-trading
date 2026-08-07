@@ -113,6 +113,7 @@ class PaperOrderBook:
         direction = str(direction).upper()
         signal_date = _date_text(signal_trade_date)
         planned_date = _date_text(planned_trade_date)
+        metadata_dict = dict(metadata or {})
         if direction not in {"BUY", "SELL"}:
             raise ValueError("订单方向必须是 BUY 或 SELL")
         if int(quantity) <= 0 or (int(quantity) % 100 != 0 and not close_position):
@@ -130,6 +131,17 @@ class PaperOrderBook:
         existing = self.get(order_id)
         if existing is not None:
             return existing, False
+        intent_kind = str(metadata_dict.get("kind", "")).strip()
+        if intent_kind:
+            same_intent = self.find_signal_intent(
+                signal_trade_date=signal_date,
+                direction=direction,
+                code=code,
+                kind=intent_kind,
+                batch_number=metadata_dict.get("batch_number"),
+            )
+            if same_intent is not None:
+                return same_intent, False
         same_active = next(
             (order for order in self.active_orders()
              if order.code == code and order.direction == direction),
@@ -155,7 +167,7 @@ class PaperOrderBook:
             close_position=bool(close_position),
             created_at=timestamp,
             updated_at=timestamp,
-            metadata=dict(metadata or {}),
+            metadata=metadata_dict,
         )
         self.orders.append(order)
         self.save()
@@ -186,6 +198,41 @@ class PaperOrderBook:
             and order.direction == normalized_direction
             for order in self.orders
         )
+
+    def find_signal_intent(
+            self, *, signal_trade_date: str, direction: str, code: str,
+            kind: str, batch_number=None) -> PaperOrder | None:
+        """查找稳定语义意图；终结订单也会阻止同日复活。"""
+        signal_date = _date_text(signal_trade_date)
+        normalized_direction = str(direction).upper()
+        normalized_code = str(code).zfill(6)
+        normalized_kind = str(kind).strip()
+        normalized_batch = "" if batch_number is None else str(batch_number)
+        return next(
+            (
+                order for order in self.orders
+                if order.signal_trade_date == signal_date
+                and order.direction == normalized_direction
+                and order.code == normalized_code
+                and str((order.metadata or {}).get("kind", "")).strip() == normalized_kind
+                and (
+                    "" if (order.metadata or {}).get("batch_number") is None
+                    else str((order.metadata or {}).get("batch_number"))
+                ) == normalized_batch
+            ),
+            None,
+        )
+
+    def has_signal_intent(
+            self, *, signal_trade_date: str, direction: str, code: str,
+            kind: str, batch_number=None) -> bool:
+        return self.find_signal_intent(
+            signal_trade_date=signal_trade_date,
+            direction=direction,
+            code=code,
+            kind=kind,
+            batch_number=batch_number,
+        ) is not None
 
 
 def _normalized_frame(frame: pd.DataFrame) -> pd.DataFrame:
