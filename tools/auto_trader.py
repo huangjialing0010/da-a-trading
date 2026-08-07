@@ -17,7 +17,12 @@ from datetime import date, timedelta, datetime
 from pathlib import Path
 
 from .account import VirtualAccount, Position
-from .data_fetcher import fetch_daily_kline, fetch_financial_data, fetch_market_water_level
+from .data_fetcher import (
+    fetch_daily_kline,
+    fetch_financial_data,
+    fetch_market_water_level,
+    get_expected_trade_date,
+)
 from .signal_engine import check_monitor
 from .industry_analyzer import get_stock_industry
 from .commodity_fetcher import check_commodity_cycle
@@ -286,8 +291,8 @@ def _position_opened_at(trades: list, code: str) -> tuple[date | None, str | Non
 
 
 def _evaluate_holding_freshness(
-        holding_codes: list[str], data_dates: dict[str, str], benchmark_date: str) -> dict:
-    """判断任一趋势持仓是否缺行情或落后于基准日期。"""
+        holding_codes: list[str], data_dates: dict[str, str], reference_date: str) -> dict:
+    """判断任一持仓是否缺行情或落后于指定交易日。"""
     normalized_codes = [str(code).zfill(6) for code in holding_codes]
     normalized_dates = {str(code).zfill(6): str(value) for code, value in data_dates.items()}
     missing = []
@@ -302,11 +307,11 @@ def _evaluate_holding_freshness(
             continue
         valid_dates[code] = value
 
-    benchmark_missing = not benchmark_date
+    benchmark_missing = not reference_date
     stale = []
     if not benchmark_missing:
         try:
-            bm = date.fromisoformat(benchmark_date)
+            bm = date.fromisoformat(reference_date)
         except (TypeError, ValueError):
             benchmark_missing = True
         else:
@@ -321,6 +326,31 @@ def _evaluate_holding_freshness(
         "stale": stale,
         "benchmark_missing": benchmark_missing,
     }
+
+
+def _market_date_gate(
+        holding_codes: list[str], data_dates: dict[str, str], calendar_info: dict) -> dict:
+    """将交易日历和单仓全部持仓K线合并为 fail-closed 交易闸门。"""
+    expected_date = str(calendar_info.get("expected_date", ""))
+    calendar_unknown = calendar_info.get("status") != "ready" or not expected_date
+    freshness = _evaluate_holding_freshness(holding_codes, data_dates, expected_date)
+    return {
+        **freshness,
+        "freeze": calendar_unknown or freshness["freeze"],
+        "calendar_unknown": calendar_unknown,
+        "expected_date": expected_date,
+    }
+
+
+def _benchmark_performance_allowed(calendar_info: dict, benchmark_date: str) -> bool:
+    """只有基准覆盖期望交易日时才允许写入含基准/超额的表现记录。"""
+    if calendar_info.get("status") != "ready":
+        return False
+    expected = str(calendar_info.get("expected_date", ""))
+    try:
+        return date.fromisoformat(benchmark_date) >= date.fromisoformat(expected)
+    except (TypeError, ValueError):
+        return False
 
 
 def _trend_date_exit_permissions(
@@ -417,11 +447,20 @@ TREND_ACCOUNT_FILE = str(OUTPUT_DIR / "account_trend.json")
 TREND_PERF_FILE = OUTPUT_DIR / "performance_trend.csv"
 
 
-def trend_daily_update() -> str:
+def trend_daily_update(calendar_info: dict | None = None) -> str:
     """趋势策略虚拟仓 — 独立于深价主仓，纸上测试趋势反转策略"""
     socket.setdefaulttimeout(15)
     lines = []
     today = date.today()
+    calendar_info = calendar_info or get_expected_trade_date()
+    expected_date = str(calendar_info.get("expected_date", ""))
+    lines.append(
+        f"  [交易日期] 期望{expected_date or '未知'} | "
+        f"来源{calendar_info.get('source', '未知')} | {calendar_info.get('reason', '')}"
+    )
+    if calendar_info.get("status") != "ready" or not expected_date:
+        lines.append("  [数据熔断] 交易日历不可判定，趋势仓买卖、净值和表现全部冻结")
+        return "\n".join(lines)
 
     # 加载/初始化趋势账户
     import os as _os
@@ -446,6 +485,7 @@ def trend_daily_update() -> str:
         "roe_lt_6": 0,
         "current_yoy_lt_minus_20": 0,
         "kline_unavailable": 0,
+        "kline_stale": 0,
         "limit_locked": 0,
         "near_52w_high": 0,
         "commodity_high": 0,
@@ -493,16 +533,13 @@ def trend_daily_update() -> str:
                         f"{mkt_val:,.0f}", f"{pnl:+.1%}",
                         exit_info, pos.strategy or "trend_reversal"])
 
-    # ── 1.5 数据熔断：任一持仓K线缺失或滞后于基准日期时，冻结当日自动交易 ──
-    bm_date = _benchmark_last_date()
-    freshness = _evaluate_holding_freshness(holding_codes, holding_data_dates, bm_date)
-    if freshness["benchmark_missing"]:
-        lines.append("\n  [数据告警] 基准日期缺失，仅持仓数据熔断可用")
+    # ── 1.5 数据熔断：趋势仓独立核对全部持仓是否覆盖期望交易日 ──
+    freshness = _market_date_gate(holding_codes, holding_data_dates, calendar_info)
     if freshness["freeze"]:
         issues = []
         issues.extend(f"{code}=缺失" for code in freshness["missing"])
         issues.extend(
-            f"{code}={data_date} 落后于基准{bm_date}"
+            f"{code}={data_date} 落后于期望{expected_date}"
             for code, data_date in freshness["stale"]
         )
         lines.append(f"\n  [数据熔断] {'；'.join(issues)}")
@@ -636,6 +673,13 @@ def trend_daily_update() -> str:
             if kline.empty or len(kline) < 250:
                 funnel["kline_unavailable"] += 1
                 continue
+            try:
+                candidate_date = str(kline.index[-1].date())
+            except (AttributeError, IndexError, TypeError, ValueError):
+                candidate_date = ""
+            if not candidate_date or candidate_date < expected_date:
+                funnel["kline_stale"] += 1
+                continue
             if _limit_locked(kline, "buy"):
                 funnel["limit_locked"] += 1
                 continue  # 一字涨停买不进
@@ -681,6 +725,8 @@ def trend_daily_update() -> str:
 
     # ── 5. 基准对比 ──
     bm_price = _get_benchmark_price(today)
+    bm_date = _benchmark_last_date()
+    performance_allowed = _benchmark_performance_allowed(calendar_info, bm_date)
 
     # 反推初始资金：现金 + 累计买入 - 累计卖出
     buy_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "BUY")
@@ -710,6 +756,7 @@ def trend_daily_update() -> str:
         f" → ROE<6% {funnel['roe_lt_6']}"
         f" → 利润同比<-20% {funnel['current_yoy_lt_minus_20']}"
         f" → K线不足{funnel['kline_unavailable']}"
+        f" → K线过期{funnel['kline_stale']}"
         f" → 一字板{funnel['limit_locked']}"
         f" → 接近52周高点{funnel['near_52w_high']}"
         f" → 商品周期高位{funnel['commodity_high']}"
@@ -721,9 +768,17 @@ def trend_daily_update() -> str:
     )
     lines.append(_format_trade_sample(acc.state.trades, acc.state.position_count))
     lines.append(f"\n  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
-    lines.append(f"  成立以来: {total_ret:+.2%} | 沪深300: {bm_ret:+.2%} | 超额: {total_ret - bm_ret:+.2%}")
+    if performance_allowed:
+        lines.append(f"  成立以来: {total_ret:+.2%} | 沪深300: {bm_ret:+.2%} | 超额: {total_ret - bm_ret:+.2%}")
+    else:
+        lines.append(
+            f"  成立以来: {total_ret:+.2%} | [表现冻结] 基准日期{bm_date or '缺失'}"
+            f"未覆盖期望{expected_date}"
+        )
 
     # 持久化表现
+    if not performance_allowed:
+        return "\n".join(lines)
     rows = []
     if TREND_PERF_FILE.exists():
         try:
@@ -871,6 +926,12 @@ def daily_update() -> str:
     lines = []
     acc = VirtualAccount(costs_enabled=True)
     today = date.today()
+    calendar_info = get_expected_trade_date()
+    expected_date = str(calendar_info.get("expected_date", ""))
+    lines.append(
+        f"[交易日期] 期望{expected_date or '未知'} | "
+        f"来源{calendar_info.get('source', '未知')} | {calendar_info.get('reason', '')}"
+    )
     batch_state = _load_batch_state()
     deep_candidate_count = None
     deep_funnel = {
@@ -915,6 +976,7 @@ def daily_update() -> str:
 
     dv_rows = []
     latest_date = ""
+    deep_holding_dates = {}
     for pos in acc.get_holdings():
         kline = _get_kline(pos.code, ttl_days=0)
         if kline.empty:
@@ -923,6 +985,7 @@ def daily_update() -> str:
 
         latest = kline.iloc[-1]
         latest_date = str(kline.index[-1].date())
+        deep_holding_dates[pos.code] = latest_date
         new_price = float(latest["收盘"])
 
         old_price = pos.current_price
@@ -947,11 +1010,25 @@ def daily_update() -> str:
                         f"{mkt_val:,.0f}", f"{pnl:+.1%}",
                         exit_info, pos.strategy or "deep_value"])
 
-    acc._save()  # 价格更新立即持久化
+    deep_gate = _market_date_gate(list(holding_codes), deep_holding_dates, calendar_info)
+    deep_frozen = deep_gate["freeze"]
+    if deep_frozen:
+        issues = []
+        if deep_gate["calendar_unknown"]:
+            issues.append(f"交易日历不可判定({calendar_info.get('reason', '')})")
+        issues.extend(f"{code}=缺失" for code in deep_gate["missing"])
+        issues.extend(
+            f"{code}={data_date} 落后于期望{expected_date}"
+            for code, data_date in deep_gate["stale"]
+        )
+        lines.append(f"[数据熔断][深价仓] {'；'.join(issues)}")
+        lines.append("  深价仓买卖、账户/持仓/表现写入和深价复盘全部冻结；候选研究继续")
+    else:
+        acc._save()  # 全部持仓新鲜后才持久化价格
 
     # 2. 止损/止盈检查（考虑分批计划）
     # 先获取 check_monitor 的非止损信号（基本面/时间止损/止盈保留）
-    signals = check_monitor(acc)
+    signals = [] if deep_frozen else check_monitor(acc)
     deep_funnel["sell_signals"] = sum(1 for s in signals if s.type == "SELL")
     for s in signals:
         if s.type == "SELL" and s.urgency == "urgent":
@@ -987,6 +1064,8 @@ def daily_update() -> str:
     if not erp_cap_ok:
         lines.append(f"  [ERP闸门] {erp_cap_msg}，跳过分批加仓")
     for code, cfg in batch_state.items():
+        if deep_frozen:
+            continue
         if code not in acc.get_holding_codes():
             continue
 
@@ -1091,7 +1170,7 @@ def daily_update() -> str:
     etf_names = {"510300": "沪深300ETF", "510500": "中证500ETF"}
 
     # 清理已手动卖出的恐慌持仓
-    if panic_state["active"]:
+    if not deep_frozen and panic_state["active"]:
         for entry in list(panic_state["entries"]):
             if entry["code"] not in acc.get_holding_codes() and panic_state["batch"] >= panic_cfg["batches"]:
                 panic_state["active"] = False
@@ -1102,7 +1181,7 @@ def daily_update() -> str:
                 break
 
     # 恐慌触发
-    if erp >= panic_cfg["trigger_erp"] and not panic_state["active"]:
+    if not deep_frozen and erp >= panic_cfg["trigger_erp"] and not panic_state["active"]:
         lines.append(f"[恐慌触发] ERP={erp:.2%} >= {panic_cfg['trigger_erp']:.0%}")
         panic_cap_ok, panic_cap_msg = _check_erp_position_cap(acc, erp)
         if not panic_cap_ok:
@@ -1137,7 +1216,7 @@ def daily_update() -> str:
             _save_panic_state(panic_state)
 
     # 恐慌加仓
-    elif panic_state["active"] and panic_state["batch"] < panic_cfg["batches"]:
+    elif not deep_frozen and panic_state["active"] and panic_state["batch"] < panic_cfg["batches"]:
         panic_cap_ok, panic_cap_msg = _check_erp_position_cap(acc, erp)
         if not panic_cap_ok:
             lines.append(f"  [ERP闸门] {panic_cap_msg}，跳过恐慌加仓")
@@ -1161,7 +1240,7 @@ def daily_update() -> str:
                 break
 
     # 恐慌退出
-    if panic_state["active"] and erp < panic_cfg["exit_erp"]:
+    if not deep_frozen and panic_state["active"] and erp < panic_cfg["exit_erp"]:
         lines.append(f"[恐慌退出] ERP={erp:.2%} < {panic_cfg['exit_erp']:.0%}")
         for entry in panic_state["entries"]:
             code = entry["code"]
@@ -1174,21 +1253,21 @@ def daily_update() -> str:
         _save_panic_state(panic_state)
 
     # 4. 记录净值
-    acc.record_snapshot()
+    if not deep_frozen:
+        acc.record_snapshot()
 
     # 数据新鲜度（取任一持仓K线日期）
-    data_date = "未知"
-    for p in acc.get_holdings():
-        k = _get_kline(p.code)
-        if not k.empty:
-            data_date = str(k.index[-1].date())
-            break
+    data_date = min(deep_holding_dates.values(), default=expected_date or "未知")
     # 日历日>3才警告：周五→周一跨3天（周末）属正常
     days_stale = (today - datetime.strptime(data_date, "%Y-%m-%d").date()).days if data_date != "未知" else 99
     stale_warn = " [警告] 数据过期!" if days_stale > 3 else ""
 
     # 4.1 基准对比：沪深300指数价格
     bm_price = _get_benchmark_price(today)
+    bm_date = _benchmark_last_date()
+    performance_allowed = (
+        not deep_frozen and _benchmark_performance_allowed(calendar_info, bm_date)
+    )
     initial_cash = _load_config()["account"]["initial_cash"]
     total_ret = (acc.state.total_value / initial_cash) - 1
 
@@ -1212,18 +1291,27 @@ def daily_update() -> str:
             ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "止盈/止损", "策略"],
             dv_rows))
     lines.append(f"\n  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
-    lines.append(f"  成立以来: {total_ret:+.2%} | 沪深300: {bm_ret:+.2%} | 超额: {alpha:+.2%}")
+    if performance_allowed:
+        lines.append(f"  成立以来: {total_ret:+.2%} | 沪深300: {bm_ret:+.2%} | 超额: {alpha:+.2%}")
+    else:
+        lines.append(
+            f"  成立以来: {total_ret:+.2%} | [表现冻结] 基准日期{bm_date or '缺失'}"
+            f"未覆盖期望{expected_date or '未知'}，或深价仓已熔断"
+        )
     lines.append(f"  数据日期: {data_date}（{days_stale}天前）{stale_warn}")
 
     # 4.2 持久化表现日志
-    _save_performance_log(acc, bm_price)
+    if performance_allowed:
+        _save_performance_log(acc, bm_price)
 
     # 5. 保存持仓快照到 CSV
-    _save_holdings_snapshot(acc)
+    if not deep_frozen:
+        _save_holdings_snapshot(acc)
 
     # 6. 持久化（周报/月报之前先存盘，防止review崩溃丢进度）
-    _save_batch_state(batch_state)
-    _save_panic_state(panic_state)
+    if not deep_frozen:
+        _save_batch_state(batch_state)
+        _save_panic_state(panic_state)
 
     # 7. 周报/月报（非关键路径，崩了不影响主流程）
     # 周报：周五生成
@@ -1231,8 +1319,9 @@ def daily_update() -> str:
     if today.weekday() == 4:
         try:
             from .review import weekly_review, trend_weekly_review
-            weekly_review(acc)
-            lines.append(f"\n[周报] weekly_{today.strftime('%Y%m%d')}.md")
+            if not deep_frozen:
+                weekly_review(acc)
+                lines.append(f"\n[周报] weekly_{today.strftime('%Y%m%d')}.md")
             trend_weekly_review()
             lines.append(f"[趋势周报] trend_weekly_{today.strftime('%Y%m%d')}.md")
         except Exception as e:
@@ -1243,8 +1332,9 @@ def daily_update() -> str:
     if not monthly_file.exists():
         try:
             from .review import monthly_review, trend_monthly_review
-            monthly_review(acc, target_month=last_month)
-            lines.append(f"\n[月报] monthly_{last_month.strftime('%Y%m')}.md")
+            if not deep_frozen:
+                monthly_review(acc, target_month=last_month)
+                lines.append(f"\n[月报] monthly_{last_month.strftime('%Y%m')}.md")
             trend_monthly_review(target_month=last_month)
             lines.append(f"[趋势月报] trend_monthly_{last_month.strftime('%Y%m')}.md")
         except Exception as e:
@@ -1395,7 +1485,7 @@ def daily_update() -> str:
 
     # 9. 趋势策略虚拟仓（纸上测试，非实盘！！！）
     try:
-        trend_report = trend_daily_update()
+        trend_report = trend_daily_update(calendar_info)
         lines.append(f"\n═══ 趋势虚拟仓（纸上测试） ═══")
         lines.append(f"{trend_report}")
     except Exception as e:

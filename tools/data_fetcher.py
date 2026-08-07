@@ -2,8 +2,9 @@
 
 import os
 import json
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import akshare as ak
@@ -23,6 +24,9 @@ CACHE_DIR = BASE_DIR / "data"
 KLINE_DIR = CACHE_DIR / "daily_kline"
 FIN_DIR = CACHE_DIR / "financials"
 MARKET_DIR = CACHE_DIR / "market"
+TRADE_CALENDAR_FILE = MARKET_DIR / "trade_calendar.csv"
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+MARKET_DATA_CUTOFF = time(16, 30)
 
 
 def _cache_path(subdir: Path, key: str, suffix: str = ".csv") -> str:
@@ -37,6 +41,95 @@ def _cache_valid(filepath: str, ttl_days: int) -> bool:
         return False
     mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
     return (datetime.now() - mtime).days < ttl_days
+
+
+def _normalize_trade_dates(values) -> list[str]:
+    normalized = []
+    for value in values:
+        try:
+            normalized.append(pd.Timestamp(value).date().isoformat())
+        except (TypeError, ValueError):
+            continue
+    return sorted(set(normalized))
+
+
+def resolve_expected_trade_date(trade_dates: list[str], now: datetime) -> dict:
+    """用已覆盖的交易日历推导本次日更应看到的最新完整交易日。"""
+    local_now = now.astimezone(SHANGHAI_TZ) if now.tzinfo else now.replace(tzinfo=SHANGHAI_TZ)
+    dates = [date.fromisoformat(value) for value in _normalize_trade_dates(trade_dates)]
+    today = local_now.date()
+    previous = max((value for value in dates if value < today), default=None)
+    calendar_max = max(dates, default=None)
+
+    result = {
+        "status": "unknown",
+        "expected_date": "",
+        "calendar_max": calendar_max.isoformat() if calendar_max else "",
+        "reason": "交易日历为空",
+    }
+    if not dates:
+        return result
+
+    if today.weekday() >= 5:
+        if previous:
+            result.update(status="ready", expected_date=previous.isoformat(), reason="周末")
+        return result
+
+    if local_now.time() < MARKET_DATA_CUTOFF:
+        if previous:
+            result.update(status="ready", expected_date=previous.isoformat(), reason="收盘数据截止时间前")
+        return result
+
+    if today in dates:
+        result.update(status="ready", expected_date=today.isoformat(), reason="当日交易日已覆盖")
+        return result
+
+    if calendar_max and calendar_max > today and previous:
+        result.update(status="ready", expected_date=previous.isoformat(), reason="日历证明当日休市")
+        return result
+
+    result["reason"] = "工作日日历覆盖不足"
+    return result
+
+
+def get_expected_trade_date(
+        now: datetime | None = None,
+        cache_file: str | Path = TRADE_CALENDAR_FILE,
+        fetcher=None) -> dict:
+    """刷新交易日历并返回期望交易日；网络失败时仅使用覆盖充分的缓存。"""
+    now = now or datetime.now(SHANGHAI_TZ)
+    cache_path = Path(cache_file)
+    fetcher = fetcher or ak.tool_trade_date_hist_sina
+    source = "none"
+    trade_dates = []
+
+    try:
+        raw = fetcher()
+        if raw is None or raw.empty:
+            raise ValueError("交易日历为空")
+        column = "trade_date" if "trade_date" in raw.columns else raw.columns[0]
+        trade_dates = _normalize_trade_dates(raw[column].tolist())
+        if not trade_dates:
+            raise ValueError("交易日历无有效日期")
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+        pd.DataFrame({"trade_date": trade_dates}).to_csv(tmp_path, index=False, encoding="utf-8")
+        os.replace(tmp_path, cache_path)
+        source = "network"
+    except Exception:
+        if cache_path.exists():
+            try:
+                cached = pd.read_csv(cache_path, dtype=str)
+                column = "trade_date" if "trade_date" in cached.columns else cached.columns[0]
+                trade_dates = _normalize_trade_dates(cached[column].tolist())
+                source = "cache"
+            except Exception:
+                trade_dates = []
+
+    result = resolve_expected_trade_date(trade_dates, now)
+    result["source"] = source
+    result["checked_at"] = now.astimezone(SHANGHAI_TZ).strftime("%Y-%m-%d %H:%M") if now.tzinfo else now.strftime("%Y-%m-%d %H:%M")
+    return result
 
 
 # === 日K线 ===
