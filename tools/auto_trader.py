@@ -245,6 +245,93 @@ def _format_trade_sample(trades: list, current_positions: int) -> str:
             f" | 完整回合{round_trip_text}/30 | 当前持仓{current_positions}")
 
 
+def _position_opened_at(trades: list, code: str) -> tuple[date | None, str | None]:
+    """从交易记录重建指定股票当前这一轮持仓的入场日。"""
+    target = str(code).zfill(6)
+    held = 0
+    opened_at = None
+
+    for trade in trades:
+        trade_code = str(getattr(trade, "code", "")).zfill(6)
+        if trade_code != target:
+            continue
+
+        direction = str(getattr(trade, "direction", "")).upper()
+        try:
+            qty = int(getattr(trade, "quantity", 0))
+        except (TypeError, ValueError):
+            return None, f"{target} 交易数量非法"
+        if qty <= 0:
+            return None, f"{target} 交易数量非法"
+
+        try:
+            trade_date = date.fromisoformat(str(getattr(trade, "time", ""))[:10])
+        except (TypeError, ValueError):
+            return None, f"{target} 交易日期非法"
+
+        if direction == "BUY":
+            if held == 0:
+                opened_at = trade_date
+            held += qty
+        elif direction == "SELL":
+            if held <= 0 or qty > held:
+                return None, f"{target} 卖出数量超过已重建持仓"
+            held -= qty
+            if held == 0:
+                opened_at = None
+        else:
+            return None, f"{target} 交易方向非法"
+
+    return opened_at, None
+
+
+def _evaluate_holding_freshness(
+        holding_codes: list[str], data_dates: dict[str, str], benchmark_date: str) -> dict:
+    """判断任一趋势持仓是否缺行情或落后于基准日期。"""
+    normalized_codes = [str(code).zfill(6) for code in holding_codes]
+    normalized_dates = {str(code).zfill(6): str(value) for code, value in data_dates.items()}
+    missing = []
+    valid_dates = {}
+
+    for code in normalized_codes:
+        value = normalized_dates.get(code, "")
+        try:
+            date.fromisoformat(value)
+        except (TypeError, ValueError):
+            missing.append(code)
+            continue
+        valid_dates[code] = value
+
+    benchmark_missing = not benchmark_date
+    stale = []
+    if not benchmark_missing:
+        try:
+            bm = date.fromisoformat(benchmark_date)
+        except (TypeError, ValueError):
+            benchmark_missing = True
+        else:
+            stale = sorted(
+                (code, value) for code, value in valid_dates.items()
+                if date.fromisoformat(value) < bm
+            )
+
+    return {
+        "freeze": bool(missing or stale),
+        "missing": sorted(missing),
+        "stale": stale,
+        "benchmark_missing": benchmark_missing,
+    }
+
+
+def _trend_date_exit_permissions(
+        held_days: int | None, hold_min_days: int, hold_max_days: int) -> dict:
+    """只控制依赖持有天数的退出；价格类止损止盈不经过此门。"""
+    return {
+        "ma200": held_days is not None and held_days >= hold_min_days,
+        "max_hold": held_days is not None and held_days > hold_max_days,
+    }
+
+
 def _load_batch_state() -> dict:
     if BATCH_STATE_FILE.exists():
         with open(BATCH_STATE_FILE, "r", encoding="utf-8") as f:
@@ -376,12 +463,14 @@ def trend_daily_update() -> str:
     trail_drawdown_pct = cfg["take_profit"]["trail_drawdown"]
 
     tr_rows = []
-    latest_data_dates = []
-    for pos in acc.get_holdings():
+    holdings = list(acc.get_holdings())
+    holding_codes = [pos.code for pos in holdings]
+    holding_data_dates = {}
+    for pos in holdings:
         kline = fetch_daily_kline(pos.code, ttl_days=0)
         if kline.empty:
             continue
-        latest_data_dates.append(str(kline.index[-1].date()))
+        holding_data_dates[pos.code] = str(kline.index[-1].date())
         new_price = float(kline.iloc[-1]["收盘"])
         old_price = pos.current_price
         acc.update_price(pos.code, new_price)
@@ -404,11 +493,19 @@ def trend_daily_update() -> str:
                         f"{mkt_val:,.0f}", f"{pnl:+.1%}",
                         exit_info, pos.strategy or "trend_reversal"])
 
-    # ── 1.5 数据熔断：持仓K线滞后于基准日期时，冻结当日自动交易 ──
+    # ── 1.5 数据熔断：任一持仓K线缺失或滞后于基准日期时，冻结当日自动交易 ──
     bm_date = _benchmark_last_date()
-    price_date = max(latest_data_dates) if latest_data_dates else ""
-    if bm_date and price_date and price_date < bm_date:
-        lines.append(f"\n  [数据熔断] 持仓K线日期 {price_date} < 基准日期 {bm_date}，数据陈旧")
+    freshness = _evaluate_holding_freshness(holding_codes, holding_data_dates, bm_date)
+    if freshness["benchmark_missing"]:
+        lines.append("\n  [数据告警] 基准日期缺失，仅持仓数据熔断可用")
+    if freshness["freeze"]:
+        issues = []
+        issues.extend(f"{code}=缺失" for code in freshness["missing"])
+        issues.extend(
+            f"{code}={data_date} 落后于基准{bm_date}"
+            for code, data_date in freshness["stale"]
+        )
+        lines.append(f"\n  [数据熔断] {'；'.join(issues)}")
         lines.append("  今日跳过趋势仓自动交易（买入和卖出均不执行），不记录净值/表现")
         if tr_rows:
             lines.append(_format_table(
@@ -425,6 +522,7 @@ def trend_daily_update() -> str:
     hold_max_days = dv.get("hold_max_months", 18) * 30
 
     stopped_today = set()
+    entry_date_warnings = []
     for pos in list(acc.get_holdings()):
         price = pos.current_price
         if price <= 0:
@@ -434,15 +532,19 @@ def trend_daily_update() -> str:
             lines.append(f"  [无法成交] {pos.name} 一字跌停，今日无法卖出")
             continue
         pnl = price / pos.avg_cost - 1
-        held_days = (today - datetime.strptime(
-            acc.state.trades[0].time[:10] if acc.state.trades else today.isoformat(),
-            "%Y-%m-%d").date()).days if acc.state.trades else 0
+        opened_at, opened_at_error = _position_opened_at(acc.state.trades, pos.code)
+        held_days = (today - opened_at).days if opened_at is not None else None
+        if opened_at_error:
+            entry_date_warnings.append(f"{pos.code}={opened_at_error}")
+        elif opened_at is None:
+            entry_date_warnings.append(f"{pos.code}=交易记录中没有未平仓入场日")
+        date_exit = _trend_date_exit_permissions(held_days, hold_min_days, hold_max_days)
 
         sell_reason = None
 
         if pnl <= stops["hard_stop"]:
             sell_reason = f"硬止损 {pnl:.1%}"
-        elif held_days >= hold_min_days and pnl < -0.10:
+        elif date_exit["ma200"] and pnl < -0.10:
             kline = fetch_daily_kline(pos.code)
             if not kline.empty and len(kline) >= 200:
                 ma200 = float(kline["收盘"].rolling(200).mean().iloc[-1])
@@ -455,7 +557,7 @@ def trend_daily_update() -> str:
                 dd = (recent_high - price) / recent_high
                 if dd >= tp["trail_drawdown"]:
                     sell_reason = f"移动止盈 回撤{dd:.1%}"
-        elif held_days > hold_max_days:
+        elif date_exit["max_hold"]:
             sell_reason = f"持仓到期 {held_days}天"
 
         if sell_reason:
@@ -466,6 +568,9 @@ def trend_daily_update() -> str:
                 funnel["sells"] += 1
             if "硬止损" in sell_reason or "MA200" in sell_reason:
                 stopped_today.add(pos.code)
+
+    if entry_date_warnings:
+        lines.append(f"  [日期告警] {'；'.join(entry_date_warnings)}；已跳过期限类退出")
 
     # ── 止损冷却期：防止卖出后立刻买回 ──
     cooling_off = {}
