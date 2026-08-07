@@ -14,6 +14,7 @@ from .data_fetcher import fetch_market_water_level, fetch_daily_kline
 from .screener import load_candidates
 from .industry_analyzer import get_all_industry_scores, get_industry_distribution
 from .report_markdown import refresh_reports_index
+from .validation import build_virtual_validation_status, virtual_validation_markdown
 
 BASE_DIR = Path(__file__).parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
@@ -580,6 +581,17 @@ def trend_weekly_review() -> str:
     lines.append("")
 
     lines.extend(_combined_overview_section())
+
+    # 修复后有效样本与未来实盘讨论门槛（纯虚拟盘）
+    trend_perf_file = OUTPUT_DIR / "performance_trend.csv"
+    try:
+        validation_perf = pd.read_csv(trend_perf_file)
+    except Exception:
+        validation_perf = pd.DataFrame()
+    validation_status = build_virtual_validation_status(
+        acc.state.trades, validation_perf, as_of=today
+    )
+    lines.extend(virtual_validation_markdown(validation_status))
 
     # 持仓明细
     lines.append("## 二、持仓明细")

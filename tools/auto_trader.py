@@ -495,6 +495,19 @@ def _build_trend_holding_rows(holdings: list[Position], cfg: dict, kline_getter)
     ]
 
 
+def _trend_validation_text(trades: list, as_of: date) -> str:
+    """读取已持久化趋势表现并生成纯虚拟盘验证区块。"""
+    import pandas as pd
+    from .validation import build_virtual_validation_status, format_virtual_validation_text
+
+    try:
+        performance = pd.read_csv(TREND_PERF_FILE)
+    except Exception:
+        performance = pd.DataFrame()
+    status = build_virtual_validation_status(trades, performance, as_of=as_of)
+    return format_virtual_validation_text(status)
+
+
 def trend_daily_update(calendar_info: dict | None = None) -> str:
     """趋势策略虚拟仓 — 独立于深价主仓，纸上测试趋势反转策略"""
     socket.setdefaulttimeout(15)
@@ -807,6 +820,7 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
 
     # 持久化表现
     if not performance_allowed:
+        lines.append(_trend_validation_text(acc.state.trades, today))
         return "\n".join(lines)
     rows = []
     if TREND_PERF_FILE.exists():
@@ -826,6 +840,7 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
     else:
         rows.append(row)
     pd.DataFrame(rows).to_csv(TREND_PERF_FILE, index=False, encoding="utf-8")
+    lines.append(_trend_validation_text(acc.state.trades, today))
 
     return "\n".join(lines)
 
@@ -1347,25 +1362,22 @@ def daily_update() -> str:
     # 月报：上月月报不存在时自动生成（月初容错非交易日）
     if today.weekday() == 4:
         try:
-            from .review import weekly_review, trend_weekly_review
+            from .review import weekly_review
             if not deep_frozen:
                 weekly_review(acc)
                 lines.append(f"\n[周报] weekly_{today.strftime('%Y%m%d')}.md")
-            trend_weekly_review()
-            lines.append(f"[趋势周报] trend_weekly_{today.strftime('%Y%m%d')}.md")
         except Exception as e:
             lines.append(f"\n[周报] 生成失败: {e}")
 
     last_month = today.replace(day=1) - timedelta(days=1)
     monthly_file = REPORT_DIR / f"monthly_{last_month.strftime('%Y%m')}.md"
-    if not monthly_file.exists():
+    monthly_due = not monthly_file.exists()
+    if monthly_due:
         try:
-            from .review import monthly_review, trend_monthly_review
+            from .review import monthly_review
             if not deep_frozen:
                 monthly_review(acc, target_month=last_month)
                 lines.append(f"\n[月报] monthly_{last_month.strftime('%Y%m')}.md")
-            trend_monthly_review(target_month=last_month)
-            lines.append(f"[趋势月报] trend_monthly_{last_month.strftime('%Y%m')}.md")
         except Exception as e:
             lines.append(f"\n[月报] 生成失败: {e}")
 
@@ -1517,6 +1529,14 @@ def daily_update() -> str:
         trend_report = trend_daily_update(calendar_info)
         lines.append(f"\n═══ 趋势虚拟仓（纸上测试） ═══")
         lines.append(f"{trend_report}")
+        if today.weekday() == 4:
+            from .review import trend_weekly_review
+            trend_weekly_review()
+            lines.append(f"[趋势周报] trend_weekly_{today.strftime('%Y%m%d')}.md")
+        if monthly_due:
+            from .review import trend_monthly_review
+            trend_monthly_review(target_month=last_month)
+            lines.append(f"[趋势月报] trend_monthly_{last_month.strftime('%Y%m')}.md")
     except Exception as e:
         lines.append(f"\n[趋势虚拟仓] 失败: {e}")
 
