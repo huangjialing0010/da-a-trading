@@ -177,6 +177,16 @@ class PaperOrderBook:
             if order.direction == "BUY"
         }
 
+    def has_signal_batch(self, signal_trade_date: str, direction: str) -> bool:
+        """同一信号日形成过订单批次后，重跑不得扩充该批次。"""
+        signal_date = _date_text(signal_trade_date)
+        normalized_direction = str(direction).upper()
+        return any(
+            order.signal_trade_date == signal_date
+            and order.direction == normalized_direction
+            for order in self.orders
+        )
+
 
 def _normalized_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if frame is None or frame.empty:

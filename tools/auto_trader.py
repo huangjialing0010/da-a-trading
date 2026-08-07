@@ -518,6 +518,23 @@ def _order_activity_text(book: PaperOrderBook, outcomes: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _trend_order_plan_text(book: PaperOrderBook, outcomes: list[dict]) -> str:
+    """把 V2 原策略订单与增强研究结论明确隔离。"""
+    return "\n".join([
+        "\n═══ V2 明日执行清单（原策略） ═══",
+        "  [口径] 以下来自趋势 V2 原策略订单账本，不代表已通过增强研究。",
+        _order_activity_text(book, outcomes),
+    ])
+
+
+def _research_observation_intro() -> list[str]:
+    """日报研究区的固定口径，避免研究建议被误认为 V2 订单。"""
+    return [
+        "\n═══ 增强研究观察（不影响趋势 V2） ═══",
+        "  [口径] 以下是研究结论；趋势结论只用于观察，不会生成或改变趋势 V2 订单。",
+    ]
+
+
 def _legacy_trend_snapshot_text() -> str:
     """旧趋势账户只读快照，不参与 V2 组合净值。"""
     if not os.path.exists(LEGACY_TREND_ACCOUNT_FILE):
@@ -805,7 +822,11 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
     held_codes.update(cooling_off.keys())  # 冷却中的股票等同已持有，不买入
     max_positions = 5
     pending_buys = len(order_book.active_buy_codes())
-    entry_slots = max(0, max_positions - len(acc.get_holdings()) - pending_buys)
+    signal_batch_locked = order_book.has_signal_batch(expected_date, "BUY")
+    entry_slots = (
+        0 if signal_batch_locked
+        else max(0, max_positions - len(acc.get_holdings()) - pending_buys)
+    )
     available_cash = max(0.0, acc.state.cash - order_book.reserved_cash())
     if entry_slots > 0 and available_cash > 50000:
         slots = entry_slots
@@ -954,7 +975,7 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
 
     # 持久化表现
     if not performance_allowed:
-        lines.append(_order_activity_text(order_book, order_outcomes))
+        lines.append(_trend_order_plan_text(order_book, order_outcomes))
         lines.append(_legacy_trend_snapshot_text())
         lines.append(_trend_validation_text(acc.state.trades, signal_day, acc.state.created_at))
         return "\n".join(lines)
@@ -976,7 +997,7 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
     else:
         rows.append(row)
     pd.DataFrame(rows).to_csv(TREND_PERF_FILE, index=False, encoding="utf-8")
-    lines.append(_order_activity_text(order_book, order_outcomes))
+    lines.append(_trend_order_plan_text(order_book, order_outcomes))
     lines.append(_legacy_trend_snapshot_text())
     lines.append(_trend_validation_text(acc.state.trades, signal_day, acc.state.created_at))
 
@@ -1697,11 +1718,11 @@ def daily_update() -> str:
             elim_codes  = [c for c in all_codes if cmap.get(c, "?") == "淘汰"]
             unknown     = [c for c in all_codes if cmap.get(c, "?") in ("?", "未分析")]
 
-            lines.append(f"\n═══ 研究结论速览 ═══")
+            lines.extend(_research_observation_intro())
             lines.append(f"  候选池共 {len(all_codes)} 只，已分析 {len(all_codes) - len(unknown)} 只")
 
             if buy_codes:
-                lines.append(f"\n  [建议买入] {len(buy_codes)}只")
+                lines.append(f"\n  [研究建议（非 V2 订单）] {len(buy_codes)}只")
                 for c in buy_codes:
                     n = code_to_name.get(c, c)
                     lines.append(f"    {c} {_pad_str(n, 10)} [{_strategy_tag(c)}]")
@@ -1711,7 +1732,7 @@ def daily_update() -> str:
                     n = code_to_name.get(c, c)
                     lines.append(f"    {c} {_pad_str(n, 10)} [{_strategy_tag(c)}]")
             if not buy_codes and not hold_codes:
-                lines.append(f"\n  [建议买入] 当前无买入/持有结论候选")
+                lines.append(f"\n  [研究建议（非 V2 订单）] 当前无买入/持有结论候选")
 
             if watch_codes:
                 lines.append(f"\n  [观望] {len(watch_codes)}只")

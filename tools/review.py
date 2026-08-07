@@ -637,7 +637,6 @@ def trend_weekly_review() -> str:
     trend_file = OUTPUT_DIR / "trend_candidates.csv"
     if trend_file.exists():
         try:
-            import pandas as pd
             tr = pd.read_csv(trend_file)
             held_codes = set(acc.get_holding_codes())
             new = tr[~tr["code"].astype(str).str.zfill(6).isin(held_codes)]

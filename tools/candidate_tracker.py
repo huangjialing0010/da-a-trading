@@ -15,19 +15,31 @@ COLUMNS = ["entry_date", "code", "name", "strategy", "entry_price",
            "exit_date", "exit_reason"]
 
 
+def _normalize_code(value) -> str:
+    """统一为六位 A 股代码，避免 CSV 类型推断吞掉前导零。"""
+    text = str(value).strip()
+    try:
+        return str(int(float(text))).zfill(6)
+    except (TypeError, ValueError):
+        return text.zfill(6)
+
+
 def _read_tracker() -> pd.DataFrame:
     if TRACKER_FILE.exists():
-        df = pd.read_csv(TRACKER_FILE)
+        df = pd.read_csv(TRACKER_FILE, dtype={"code": str})
         # 确保所有列存在
         for col in COLUMNS:
             if col not in df.columns:
                 df[col] = ""
+        df["code"] = df["code"].map(_normalize_code)
         return df
     return pd.DataFrame(columns=COLUMNS)
 
 
 def _save_tracker(df: pd.DataFrame):
-    df[COLUMNS].to_csv(TRACKER_FILE, index=False, encoding="utf-8")
+    output = df[COLUMNS].copy()
+    output["code"] = output["code"].map(_normalize_code)
+    output.to_csv(TRACKER_FILE, index=False, encoding="utf-8")
 
 
 def _get_latest_price(code: str) -> float:

@@ -1,0 +1,15 @@
+{
+  "cash": 2000000,
+  "positions": {},
+  "trades": [],
+  "equity_snapshots": [
+    {
+      "date": "2026-08-07",
+      "total_value": 2000000,
+      "cash": 2000000,
+      "market_value": 0,
+      "position_count": 0
+    }
+  ],
+  "created_at": "2026-08-07T16:35:53.783239"
+}

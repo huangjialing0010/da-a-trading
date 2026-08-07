@@ -68,6 +68,16 @@ class PaperOrderBookTest(unittest.TestCase):
         self.assertEqual(results, [])
         self.assertEqual(self.account.state.trades, [])
 
+    def test_signal_batch_exists_even_when_prior_order_is_final(self):
+        order, _ = self.create_buy()
+        self.assertTrue(self.book.has_signal_batch("2026-08-07", "BUY"))
+        self.assertFalse(self.book.has_signal_batch("2026-08-08", "BUY"))
+
+        order.status = "CANCELED"
+        self.book.save()
+
+        self.assertTrue(self.book.has_signal_batch("2026-08-07", "BUY"))
+
     def test_buy_fills_at_next_open_with_slippage_fee_and_trade_date(self):
         order, _ = self.create_buy()
         frame = kline([
