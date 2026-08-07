@@ -16,7 +16,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 ## 快速开始
 
 ```bash
-pip install akshare pandas numpy pyyaml
+python -m pip install -r requirements.txt
 
 python main.py status   # 查看账户
 python main.py daily    # 日更：价格刷新 + 信号检查 + 候选池 + 追踪 + 趋势虚拟仓
@@ -41,7 +41,7 @@ python main.py monitor  # 持仓监控
 
 ## 自动化
 
-GitHub Actions 工作日 17:30 自动执行日更，结果自动提交回仓库。
+GitHub Actions 工作日 17:30 自动执行日更，先跑全量测试，再执行虚拟盘日更并将结果提交回仓库。自动化只缓存非权威的财务与行业数据，不缓存账户、行情日线或 `data/market/`。
 
 ## 核心文件
 

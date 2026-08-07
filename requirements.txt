@@ -1,0 +1,4 @@
+akshare==1.18.64
+pandas==3.0.3
+numpy==2.5.1
+PyYAML==6.0.3

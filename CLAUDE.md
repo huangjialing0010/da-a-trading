@@ -64,7 +64,8 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
   - `review.py` — 定期复盘（深价+趋势独立周报/月报 + 双策略组合总览）
   - `report_markdown.py` — 日报终端文本转 GitHub Markdown + reports/README.md 索引刷新
 - `main.py` — CLI入口
-- `.github/workflows/daily.yml` — Actions日更（工作日17:30，timeout 45分钟）
+- `requirements.txt` — Python 3.12 已验证依赖锁
+- `.github/workflows/daily.yml` — Actions日更（工作日17:30，timeout 45分钟；全量测试通过后才运行；并发串行；只缓存 `financials/` 与 `sw_index/`）
 - `docs/CHANGES.md` — 变更记录（跨会话交接用）
 
 ## 回测结论（2026-07-24更新，全300池+营收过滤）
