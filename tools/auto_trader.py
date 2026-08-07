@@ -191,6 +191,60 @@ def _format_table(headers: list[str], rows: list[list]) -> str:
     return "\n".join(lines)
 
 
+def _trade_sample_stats(trades: list) -> dict:
+    """按持仓从0→正数→0统计完整买卖回合，同时保留事件审计口径。"""
+    quantities: dict[str, int] = {}
+    completed_round_trips = 0
+    invalid = False
+    buy_events = 0
+    sell_events = 0
+
+    for trade in trades:
+        raw_code = str(getattr(trade, "code", "")).strip()
+        direction = str(getattr(trade, "direction", "")).upper()
+        try:
+            qty = int(getattr(trade, "quantity", 0))
+        except (TypeError, ValueError):
+            invalid = True
+            continue
+
+        if not raw_code or qty <= 0:
+            invalid = True
+            continue
+        code = raw_code.zfill(6)
+
+        held = quantities.get(code, 0)
+        if direction == "BUY":
+            buy_events += 1
+            quantities[code] = held + qty
+        elif direction == "SELL":
+            sell_events += 1
+            if held <= 0 or qty > held:
+                invalid = True
+                continue
+            remaining = held - qty
+            quantities[code] = remaining
+            if remaining == 0:
+                completed_round_trips += 1
+        else:
+            invalid = True
+
+    return {
+        "events": buy_events + sell_events,
+        "buys": buy_events,
+        "sells": sell_events,
+        "round_trips": completed_round_trips,
+        "invalid": invalid,
+    }
+
+
+def _format_trade_sample(trades: list, current_positions: int) -> str:
+    stats = _trade_sample_stats(trades)
+    round_trip_text = "口径异常" if stats["invalid"] else str(stats["round_trips"])
+    return (f"  交易样本：事件{stats['events']}（买{stats['buys']}/卖{stats['sells']}）"
+            f" | 完整回合{round_trip_text}/30 | 当前持仓{current_positions}")
+
+
 def _load_batch_state() -> dict:
     if BATCH_STATE_FILE.exists():
         with open(BATCH_STATE_FILE, "r", encoding="utf-8") as f:
@@ -297,6 +351,23 @@ def trend_daily_update() -> str:
         return "\n".join(lines + ["  无趋势候选数据"])
 
     candidates = pd.read_csv(trend_file)
+    funnel = {
+        "candidates": len(candidates),
+        "held_or_cooling": 0,
+        "improvement_gt_500": 0,
+        "improvement_lt_5": 0,
+        "roe_lt_6": 0,
+        "current_yoy_lt_minus_20": 0,
+        "kline_unavailable": 0,
+        "limit_locked": 0,
+        "near_52w_high": 0,
+        "commodity_high": 0,
+        "viable": 0,
+        "buy_attempts": 0,
+        "buys": 0,
+        "sell_signals": 0,
+        "sells": 0,
+    }
 
     # ── 1. 更新持仓价格 ──
     cfg = _load_config()
@@ -388,8 +459,11 @@ def trend_daily_update() -> str:
             sell_reason = f"持仓到期 {held_days}天"
 
         if sell_reason:
+            funnel["sell_signals"] += 1
             ok, msg = acc.sell(pos.code, price, pos.quantity, sell_reason)
             lines.append(f"  [卖出] {msg}")
+            if ok:
+                funnel["sells"] += 1
             if "硬止损" in sell_reason or "MA200" in sell_reason:
                 stopped_today.add(pos.code)
 
@@ -420,6 +494,7 @@ def trend_daily_update() -> str:
     held_codes = set(acc.get_holding_codes())
     held_codes.update(cooling_off.keys())  # 冷却中的股票等同已持有，不买入
     max_positions = 5
+    entry_slots = max(0, max_positions - len(acc.get_holdings()))
     if len(acc.get_holdings()) < max_positions and acc.state.cash > 50000:
         slots = max_positions - len(acc.get_holdings())
 
@@ -428,6 +503,7 @@ def trend_daily_update() -> str:
         for _, r in candidates.iterrows():
             code = str(int(r["code"])).zfill(6)
             if code in held_codes:
+                funnel["held_or_cooling"] += 1
                 continue
             imp = float(r["improvement"])
             roe = float(r.get("roe", 0) or 0)
@@ -436,30 +512,38 @@ def trend_daily_update() -> str:
 
             # 过滤：基数效应 / 质量太差 / 仍在恶化
             if imp > 500:
+                funnel["improvement_gt_500"] += 1
                 continue  # 基数效应噪音
             if imp < 5:
+                funnel["improvement_lt_5"] += 1
                 continue  # 改善幅度太小
             if roe < 6:
+                funnel["roe_lt_6"] += 1
                 continue
             # 负债率不单独过滤——回测表明高负债重资产公司恰是趋势改善的主要来源
             # ROE>6% + 利润改善 + MA200退出已足够做质量过滤
             if cur_yoy < -20:
+                funnel["current_yoy_lt_minus_20"] += 1
                 continue  # 仍在恶化
 
             # 检查52周价格门
             kline = fetch_daily_kline(code)
             if kline.empty or len(kline) < 250:
+                funnel["kline_unavailable"] += 1
                 continue
             if _limit_locked(kline, "buy"):
+                funnel["limit_locked"] += 1
                 continue  # 一字涨停买不进
             price_now = float(kline["收盘"].iloc[-1])
             high_52w = float(kline["最高"].tail(250).max())
             if high_52w > 0 and price_now > high_52w * 0.90:
+                funnel["near_52w_high"] += 1
                 continue  # 太接近52周高点
 
             # 商品周期检查：周期顶部不自动入场
             cycle = check_commodity_cycle(str(r["name"]))
             if cycle and cycle["penalty"] > 0:
+                funnel["commodity_high"] += 1
                 continue  # 商品周期高位，利润改善可能是周期驱动
 
             viable.append({
@@ -468,6 +552,7 @@ def trend_daily_update() -> str:
                 "improvement": imp,
                 "roe": roe,
             })
+            funnel["viable"] += 1
 
         # 按改善幅度排序，取前N
         viable.sort(key=lambda x: x["improvement"], reverse=True)
@@ -477,9 +562,11 @@ def trend_daily_update() -> str:
             qty = int(single_max / v["price"] / 100) * 100
             if qty < 100:
                 continue
+            funnel["buy_attempts"] += 1
             ok, msg = acc.buy(v["code"], v["name"], v["price"], qty, "trend_reversal",
                             f"趋势入场: 利润改善+{v['improvement']}pp, ROE={v['roe']}%")
             if ok:
+                funnel["buys"] += 1
                 lines.append(f"  [买入] {msg}")
             if len(acc.get_holdings()) >= max_positions:
                 break
@@ -510,6 +597,24 @@ def trend_daily_update() -> str:
         lines.append(_format_table(
             ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "止盈/止损", "策略"],
             tr_rows))
+    lines.append(
+        "\n  交易漏斗："
+        f"候选{funnel['candidates']} → 已持有/冷却{funnel['held_or_cooling']}"
+        f" → 改善>500pp {funnel['improvement_gt_500']}"
+        f" → 改善<5pp {funnel['improvement_lt_5']}"
+        f" → ROE<6% {funnel['roe_lt_6']}"
+        f" → 利润同比<-20% {funnel['current_yoy_lt_minus_20']}"
+        f" → K线不足{funnel['kline_unavailable']}"
+        f" → 一字板{funnel['limit_locked']}"
+        f" → 接近52周高点{funnel['near_52w_high']}"
+        f" → 商品周期高位{funnel['commodity_high']}"
+        f" → 可交易{funnel['viable']}"
+    )
+    lines.append(
+        f"  执行结果：可用仓位{entry_slots} | 尝试买入{funnel['buy_attempts']}"
+        f" | 买入{funnel['buys']} | 卖出信号{funnel['sell_signals']} | 卖出{funnel['sells']}"
+    )
+    lines.append(_format_trade_sample(acc.state.trades, acc.state.position_count))
     lines.append(f"\n  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
     lines.append(f"  成立以来: {total_ret:+.2%} | 沪深300: {bm_ret:+.2%} | 超额: {total_ret - bm_ret:+.2%}")
 
@@ -662,6 +767,18 @@ def daily_update() -> str:
     acc = VirtualAccount(costs_enabled=True)
     today = date.today()
     batch_state = _load_batch_state()
+    deep_candidate_count = None
+    deep_funnel = {
+        "batch_plans": len(batch_state),
+        "batch_triggers": 0,
+        "erp_blocked": 0,
+        "industry_blocked": 0,
+        "limit_locked": 0,
+        "add_attempts": 0,
+        "adds": 0,
+        "sell_signals": 0,
+        "sells": 0,
+    }
 
     # 0. 为新持仓自动生成分批计划
     holding_codes = set(acc.get_holding_codes())
@@ -683,6 +800,7 @@ def daily_update() -> str:
     stale = [c for c in batch_state if c not in holding_codes]
     for c in stale:
         del batch_state[c]
+    deep_funnel["batch_plans"] = len(batch_state)
 
     # 1. 更新持仓价格（收集数据用于表格输出）
     cfg = _load_config()
@@ -729,6 +847,7 @@ def daily_update() -> str:
     # 2. 止损/止盈检查（考虑分批计划）
     # 先获取 check_monitor 的非止损信号（基本面/时间止损/止盈保留）
     signals = check_monitor(acc)
+    deep_funnel["sell_signals"] = sum(1 for s in signals if s.type == "SELL")
     for s in signals:
         if s.type == "SELL" and s.urgency == "urgent":
             code = s.code
@@ -748,12 +867,15 @@ def daily_update() -> str:
             # 执行卖出
             kline = _get_kline(code)
             if _limit_locked(kline, "sell"):
+                deep_funnel["limit_locked"] += 1
                 lines.append(f"  [无法成交] {s.name} 一字跌停，今日无法卖出")
                 continue
             price = s.price if s.price > 0 else float(kline.iloc[-1]["收盘"])
             qty = s.quantity if s.quantity > 0 else acc.get_position(code).quantity
             ok, msg = acc.sell(code, price, qty, s.reason)
             lines.append(f"  [卖出] {msg}")
+            if ok:
+                deep_funnel["sells"] += 1
 
     # 3. 检查分批加仓（受 ERP 动态仓位上限 + 行业集中度约束）
     erp_cap_ok, erp_cap_msg = _check_erp_position_cap(acc)
@@ -787,20 +909,27 @@ def daily_update() -> str:
                 continue
             current = float(kline.iloc[-1]["收盘"])
             if current <= trigger:
+                deep_funnel["batch_triggers"] += 1
                 if _limit_locked(kline, "buy"):
+                    deep_funnel["limit_locked"] += 1
                     lines.append(f"  [无法成交] {cfg['name']} 一字涨停，无法加仓")
                     continue
                 if not erp_cap_ok:
+                    deep_funnel["erp_blocked"] += 1
                     continue
                 ind_ok, ind_msg = _check_industry_limit(code, acc)
                 if not ind_ok:
+                    deep_funnel["industry_blocked"] += 1
                     lines.append(f"  [行业闸门] {cfg['name']} 跳过加仓：{ind_msg}")
                     continue
                 qty = next_batch["qty"]
                 price = current
+                deep_funnel["add_attempts"] += 1
                 ok, msg = acc.buy(code, cfg["name"], price, qty, "deep_value",
                                   f"第{batch_num+1}批加仓: 跌至目标价{trigger:.2f}")
                 lines.append(f"  加仓: {msg}")
+                if ok:
+                    deep_funnel["adds"] += 1
                 cfg["batch"] = batch_num + 1
                 cfg["last_batch_date"] = today.isoformat()
                 _save_batch_state(batch_state)  # 立即存盘，防止崩溃丢进度
@@ -825,19 +954,26 @@ def daily_update() -> str:
             volume_ok = cur_vol > vol_ma20 * 1.2
 
             if above_ma20 and ma60_flatting and volume_ok:
+                deep_funnel["batch_triggers"] += 1
                 if _limit_locked(kline, "buy"):
+                    deep_funnel["limit_locked"] += 1
                     lines.append(f"  [无法成交] {cfg['name']} 一字涨停，无法加仓")
                     continue
                 if not erp_cap_ok:
+                    deep_funnel["erp_blocked"] += 1
                     continue
                 ind_ok, ind_msg = _check_industry_limit(code, acc)
                 if not ind_ok:
+                    deep_funnel["industry_blocked"] += 1
                     lines.append(f"  [行业闸门] {cfg['name']} 跳过加仓：{ind_msg}")
                     continue
                 qty = next_batch["qty"]
+                deep_funnel["add_attempts"] += 1
                 ok, msg = acc.buy(code, cfg["name"], current, qty, "deep_value",
                                   f"第{batch_num+1}批加仓: 企稳确认 (站上MA20, 60日线走平, 放量)")
                 lines.append(f"  加仓: {msg}")
+                if ok:
+                    deep_funnel["adds"] += 1
                 cfg["batch"] = batch_num + 1
                 cfg["last_batch_date"] = today.isoformat()
                 _save_batch_state(batch_state)  # 立即存盘
@@ -1021,6 +1157,7 @@ def daily_update() -> str:
         try:
             import pandas as pd
             dv_df = pd.read_csv(OUTPUT_DIR / "candidates.csv")
+            deep_candidate_count = len(dv_df)
             dv_new = [f"{str(r['code']).zfill(6)} {r['name']}" for _, r in dv_df.iterrows()
                       if str(r['code']).zfill(6) not in held]
             if dv_new:
@@ -1041,6 +1178,31 @@ def daily_update() -> str:
             pass
     except Exception as e:
         lines.append(f"\n[候选池] 刷新失败: {e}")
+
+    candidate_text = "不可用" if deep_candidate_count is None else str(deep_candidate_count)
+    total_value = acc.state.total_value
+    pos_ratio = acc.state.total_market_value / total_value if total_value > 0 else 0.0
+    if erp_cap_ok:
+        erp_text = "允许新增资金投入"
+    else:
+        erp_text = f"新增资金投入允许数=0（{erp_cap_msg}）"
+    lines.append("\n═══ 深价交易漏斗 ═══")
+    lines.append(
+        f"  状态：持仓{acc.state.position_count}只 | 仓位{pos_ratio:.1%} | {erp_text}"
+    )
+    lines.append(
+        f"  候选：{candidate_text}只 | 人工决策模式，不自动开新仓"
+    )
+    lines.append(
+        f"  分批加仓：计划{deep_funnel['batch_plans']} | 触发{deep_funnel['batch_triggers']}"
+        f" | ERP拦截{deep_funnel['erp_blocked']} | 行业拦截{deep_funnel['industry_blocked']}"
+        f" | 一字板拦截{deep_funnel['limit_locked']} | 尝试{deep_funnel['add_attempts']}"
+        f" | 成交{deep_funnel['adds']}"
+    )
+    lines.append(
+        f"  卖出：信号{deep_funnel['sell_signals']} | 成交{deep_funnel['sells']}"
+    )
+    lines.append(_format_trade_sample(acc.state.trades, acc.state.position_count))
 
     # 8.4 候选池假设性买入追踪
     try:
