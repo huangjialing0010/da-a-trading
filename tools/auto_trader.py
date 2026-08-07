@@ -18,11 +18,13 @@ from pathlib import Path
 
 from .account import VirtualAccount, Position
 from .data_fetcher import (
+    TRADE_CALENDAR_FILE,
     fetch_daily_kline,
     fetch_financial_data,
     fetch_market_water_level,
     get_expected_trade_date,
 )
+from .paper_orders import PaperOrderBook, execute_due_orders, next_trade_date
 from .signal_engine import check_monitor
 from .industry_analyzer import get_stock_industry
 from .commodity_fetcher import check_commodity_cycle
@@ -33,7 +35,7 @@ REPORT_DIR = OUTPUT_DIR / "reports"
 
 BATCH_STATE_FILE = OUTPUT_DIR / "batch_state.json"
 PANIC_STATE_FILE = OUTPUT_DIR / "panic_state.json"
-TREND_COOLING_OFF_FILE = OUTPUT_DIR / "trend_cooling_off.json"
+TREND_COOLING_OFF_FILE = OUTPUT_DIR / "trend_cooling_off_v2.json"
 COOLING_OFF_DAYS = 20  # 止损后冷却交易日数，防止卖出后立即买回
 
 # K线内存缓存：同一脚本内同一代码只拉一次网络
@@ -460,8 +462,75 @@ def _format_erp_investment_status(allowed: bool, message: str) -> str:
     return "允许新增资金投入"
 
 
-TREND_ACCOUNT_FILE = str(OUTPUT_DIR / "account_trend.json")
-TREND_PERF_FILE = OUTPUT_DIR / "performance_trend.csv"
+LEGACY_TREND_ACCOUNT_FILE = str(OUTPUT_DIR / "account_trend.json")
+TREND_ACCOUNT_FILE = str(OUTPUT_DIR / "account_trend_v2.json")
+TREND_PERF_FILE = OUTPUT_DIR / "performance_trend_v2.csv"
+TREND_ORDER_FILE = OUTPUT_DIR / "paper_orders_trend_v2.json"
+DEEP_ORDER_FILE = OUTPUT_DIR / "paper_orders.json"
+
+
+def _trade_calendar_dates() -> list[str]:
+    """读取已经由交易日历熔断器校验过的明确交易日。"""
+    import pandas as pd
+
+    frame = pd.read_csv(TRADE_CALENDAR_FILE, dtype=str)
+    if frame.empty:
+        raise ValueError("交易日历为空")
+    column = "trade_date" if "trade_date" in frame.columns else frame.columns[0]
+    return sorted({date.fromisoformat(str(value)[:10]).isoformat() for value in frame[column]})
+
+
+def _planned_trade_date(signal_date: str) -> str:
+    return next_trade_date(signal_date, _trade_calendar_dates())
+
+
+def _order_activity_text(book: PaperOrderBook, outcomes: list[dict]) -> str:
+    """日报订单摘要：今日处理结果、下一日待执行、阻塞/取消。"""
+    filled_ids = {item["order_id"] for item in outcomes if item.get("status") == "FILLED"}
+    canceled_ids = {item["order_id"] for item in outcomes if item.get("status") == "CANCELED"}
+    blocked_ids = {item["order_id"] for item in outcomes if item.get("status") == "BLOCKED"}
+    filled = [order for order in book.orders if order.order_id in filled_ids]
+    canceled = [order for order in book.orders if order.order_id in canceled_ids]
+    blocked = [order for order in book.orders if order.order_id in blocked_ids]
+    pending = book.active_orders()
+
+    lines = ["\n  订单执行："]
+    if filled:
+        lines.append("  今日成交：" + "；".join(
+            f"{order.direction} {order.code} {order.quantity}股 @{order.fill_price:.2f}"
+            for order in filled
+        ))
+    else:
+        lines.append("  今日成交：无")
+    if pending:
+        lines.append("  待执行：" + "；".join(
+            f"{order.planned_trade_date} {order.direction} {order.code} {order.quantity}股"
+            f"（{order.status}{':' + order.last_block_reason if order.last_block_reason else ''}）"
+            for order in pending
+        ))
+    else:
+        lines.append("  待执行：无")
+    exceptions = canceled + blocked
+    if exceptions:
+        lines.append("  阻塞/取消：" + "；".join(
+            f"{order.code} {order.status} {order.last_block_reason}" for order in exceptions
+        ))
+    return "\n".join(lines)
+
+
+def _legacy_trend_snapshot_text() -> str:
+    """旧趋势账户只读快照，不参与 V2 组合净值。"""
+    if not os.path.exists(LEGACY_TREND_ACCOUNT_FILE):
+        return "\n  旧趋势仓快照：无历史账户"
+    try:
+        legacy = VirtualAccount(LEGACY_TREND_ACCOUNT_FILE, costs_enabled=True)
+        return (
+            "\n  旧趋势仓快照（只读、不再交易）："
+            f"总资产 {legacy.state.total_value:,.0f} | 现金 {legacy.state.cash:,.0f}"
+            f" | 持仓 {legacy.state.position_count}只"
+        )
+    except Exception as exc:
+        return f"\n  旧趋势仓快照：读取失败 {exc}"
 
 
 def _trend_holding_row(pos: Position, cfg: dict, kline: "pd.DataFrame") -> list[str]:
@@ -495,16 +564,52 @@ def _build_trend_holding_rows(holdings: list[Position], cfg: dict, kline_getter)
     ]
 
 
-def _trend_validation_text(trades: list, as_of: date) -> str:
+def _build_deep_holding_rows(acc: VirtualAccount, cfg: dict) -> tuple[list[list[str]], dict[str, str]]:
+    """刷新深价持仓收盘价并生成与最终账户一致的报告行。"""
+    rows = []
+    data_dates = {}
+    for pos in list(acc.get_holdings()):
+        kline = _get_kline(pos.code, ttl_days=0)
+        if kline.empty:
+            continue
+        latest = kline.iloc[-1]
+        data_dates[pos.code] = str(kline.index[-1].date())
+        new_price = float(latest["收盘"])
+        acc.update_price(pos.code, new_price)
+        pnl = (new_price / pos.avg_cost - 1) if pos.avg_cost > 0 else 0
+        hard_stop_price = pos.avg_cost * (1 + cfg["stops"]["hard_stop"])
+        if pnl >= cfg["take_profit"]["trail_trigger"]:
+            recent_high = float(kline["收盘"].tail(20).max())
+            trail_stop = recent_high * (1 - cfg["take_profit"]["trail_drawdown"])
+            exit_info = f"止盈{trail_stop:.2f}/损{hard_stop_price:.2f}"
+        else:
+            trigger_price = pos.avg_cost * (1 + cfg["take_profit"]["trail_trigger"])
+            exit_info = f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
+        rows.append([
+            pos.code, pos.name, f"{pos.quantity:,}", f"{pos.avg_cost:.2f}",
+            f"{new_price:.2f}", f"{new_price * pos.quantity:,.0f}", f"{pnl:+.1%}",
+            exit_info, pos.strategy or "deep_value",
+        ])
+    return rows, data_dates
+
+
+def _trend_validation_text(trades: list, as_of: date, created_at: str) -> str:
     """读取已持久化趋势表现并生成纯虚拟盘验证区块。"""
     import pandas as pd
-    from .validation import build_virtual_validation_status, format_virtual_validation_text
+    from .validation import (
+        build_virtual_validation_status,
+        format_virtual_validation_text,
+        v2_validation_dates,
+    )
 
     try:
         performance = pd.read_csv(TREND_PERF_FILE)
     except Exception:
         performance = pd.DataFrame()
-    status = build_virtual_validation_status(trades, performance, as_of=as_of)
+    cutover, review_date = v2_validation_dates(created_at)
+    status = build_virtual_validation_status(
+        trades, performance, as_of=as_of, cutover=cutover, review_date=review_date,
+    )
     return format_virtual_validation_text(status)
 
 
@@ -523,21 +628,31 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
         lines.append("  [数据熔断] 交易日历不可判定，趋势仓买卖、净值和表现全部冻结")
         return "\n".join(lines)
 
-    # 加载/初始化趋势账户
+    signal_day = date.fromisoformat(expected_date)
+
+    # 加载/初始化趋势 V2 账户；旧账户只读保留
     import os as _os
     if not _os.path.exists(TREND_ACCOUNT_FILE):
-        acc = VirtualAccount.init_with_cash(1_000_000, TREND_ACCOUNT_FILE, costs_enabled=True)
-        lines.append("初始化: ¥1,000,000")
-    else:
-        acc = VirtualAccount(TREND_ACCOUNT_FILE, costs_enabled=True)
+        VirtualAccount.init_with_cash(2_000_000, TREND_ACCOUNT_FILE, costs_enabled=True)
+        lines.append("初始化趋势 V2: ¥2,000,000")
+    acc = VirtualAccount(TREND_ACCOUNT_FILE, costs_enabled=True)
 
+    order_book = PaperOrderBook(TREND_ORDER_FILE, "trend_v2")
+    order_outcomes = []
+
+    # 止损/MA200 卖单只有实际成交后才进入冷却期。
+    cooling_off = {}
+    if TREND_COOLING_OFF_FILE.exists():
+        try:
+            cooling_off = json.loads(TREND_COOLING_OFF_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
     # 读取趋势候选
     import pandas as pd
     trend_file = OUTPUT_DIR / "trend_candidates.csv"
-    if not trend_file.exists():
-        return "\n".join(lines + ["  无趋势候选数据"])
-
-    candidates = pd.read_csv(trend_file)
+    candidates = pd.read_csv(trend_file) if trend_file.exists() else pd.DataFrame()
+    if candidates.empty:
+        lines.append("  无趋势候选数据")
     funnel = {
         "candidates": len(candidates),
         "held_or_cooling": 0,
@@ -590,6 +705,28 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
         lines.append(f"  总资产(未更新): {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
         return "\n".join(lines)
 
+    # 全仓数据新鲜后才允许执行到期订单，继续保持趋势仓整体熔断语义。
+    order_outcomes = execute_due_orders(order_book, acc, expected_date, _get_kline)
+    for outcome in order_outcomes:
+        if outcome.get("status") != "FILLED":
+            continue
+        order = order_book.get(outcome["order_id"])
+        if order and order.direction == "SELL" and order.metadata.get("cooling"):
+            cooling_off[order.code] = order.fill_trade_date
+            lines.append(f"  [冷却] {order.code} 卖出成交后冷却{COOLING_OFF_DAYS}个交易日")
+    funnel["buys"] = sum(
+        1 for item in order_outcomes
+        if item.get("status") == "FILLED"
+        and order_book.get(item["order_id"])
+        and order_book.get(item["order_id"]).direction == "BUY"
+    )
+    funnel["sells"] = sum(
+        1 for item in order_outcomes
+        if item.get("status") == "FILLED"
+        and order_book.get(item["order_id"])
+        and order_book.get(item["order_id"]).direction == "SELL"
+    )
+
     # ── 2. 退出检查（复用主仓规则：硬止损/MA200/移动止盈/到期）──
     stops = cfg["stops"]
     tp = cfg["take_profit"]
@@ -597,19 +734,15 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
     hold_min_days = dv.get("hold_min_months", 6) * 30
     hold_max_days = dv.get("hold_max_months", 18) * 30
 
-    stopped_today = set()
     entry_date_warnings = []
     for pos in list(acc.get_holdings()):
         price = pos.current_price
         if price <= 0:
             continue
         kline = _get_kline(pos.code, ttl_days=0)
-        if _limit_locked(kline, "sell"):
-            lines.append(f"  [无法成交] {pos.name} 一字跌停，今日无法卖出")
-            continue
         pnl = price / pos.avg_cost - 1
         opened_at, opened_at_error = _position_opened_at(acc.state.trades, pos.code)
-        held_days = (today - opened_at).days if opened_at is not None else None
+        held_days = (signal_day - opened_at).days if opened_at is not None else None
         if opened_at_error:
             entry_date_warnings.append(f"{pos.code}={opened_at_error}")
         elif opened_at is None:
@@ -638,32 +771,27 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
 
         if sell_reason:
             funnel["sell_signals"] += 1
-            ok, msg = acc.sell(pos.code, price, pos.quantity, sell_reason)
-            lines.append(f"  [卖出] {msg}")
-            if ok:
-                funnel["sells"] += 1
-            if "硬止损" in sell_reason or "MA200" in sell_reason:
-                stopped_today.add(pos.code)
+            try:
+                planned_date = _planned_trade_date(expected_date)
+                order, created = order_book.create_order(
+                    code=pos.code, name=pos.name, direction="SELL",
+                    quantity=pos.quantity, signal_trade_date=expected_date,
+                    planned_trade_date=planned_date, signal_reason=sell_reason,
+                    reference_close=price, strategy=pos.strategy or "trend_reversal",
+                    position_qty_at_signal=pos.quantity, close_position=True,
+                    metadata={"cooling": "硬止损" in sell_reason or "MA200" in sell_reason},
+                )
+                if created:
+                    lines.append(f"  [卖出挂单] {pos.name}：{planned_date} 开盘清仓（{sell_reason}）")
+            except ValueError as exc:
+                lines.append(f"  [卖出挂单失败] {pos.name}：{exc}")
 
     if entry_date_warnings:
         lines.append(f"  [日期告警] {'；'.join(entry_date_warnings)}；已跳过期限类退出")
 
-    # ── 止损冷却期：防止卖出后立刻买回 ──
-    cooling_off = {}
-    if TREND_COOLING_OFF_FILE.exists():
-        try:
-            cooling_off = json.loads(TREND_COOLING_OFF_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-
     # 清理已过期的冷却记录
     cooling_off = {k: v for k, v in cooling_off.items()
-                   if (today - date.fromisoformat(v)).days <= COOLING_OFF_DAYS}
-
-    # 加入今日止损
-    for code in stopped_today:
-        cooling_off[code] = today.isoformat()
-        lines.append(f"  [冷却] {code} 止损后冷却{COOLING_OFF_DAYS}个交易日")
+                   if (signal_day - date.fromisoformat(v)).days <= COOLING_OFF_DAYS}
 
     if cooling_off:
         TREND_COOLING_OFF_FILE.write_text(
@@ -673,11 +801,14 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
 
     # ── 3. 入场：质量过滤后取前N只 ──
     held_codes = set(acc.get_holding_codes())
+    held_codes.update(order_book.active_buy_codes())
     held_codes.update(cooling_off.keys())  # 冷却中的股票等同已持有，不买入
     max_positions = 5
-    entry_slots = max(0, max_positions - len(acc.get_holdings()))
-    if len(acc.get_holdings()) < max_positions and acc.state.cash > 50000:
-        slots = max_positions - len(acc.get_holdings())
+    pending_buys = len(order_book.active_buy_codes())
+    entry_slots = max(0, max_positions - len(acc.get_holdings()) - pending_buys)
+    available_cash = max(0.0, acc.state.cash - order_book.reserved_cash())
+    if entry_slots > 0 and available_cash > 50000:
+        slots = entry_slots
 
         # 质量过滤
         viable = []
@@ -719,9 +850,6 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
             if not candidate_date or candidate_date < expected_date:
                 funnel["kline_stale"] += 1
                 continue
-            if _limit_locked(kline, "buy"):
-                funnel["limit_locked"] += 1
-                continue  # 一字涨停买不进
             price_now = float(kline["收盘"].iloc[-1])
             high_52w = float(kline["最高"].tail(250).max())
             if high_52w > 0 and price_now > high_52w * 0.90:
@@ -746,34 +874,39 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
         viable.sort(key=lambda x: x["improvement"], reverse=True)
         for v in viable[:slots]:
             # 仓位计算
-            single_max = acc.state.cash * 0.20
+            available_cash = max(0.0, acc.state.cash - order_book.reserved_cash())
+            single_max = available_cash * 0.20
             qty = int(single_max / v["price"] / 100) * 100
             if qty < 100:
                 continue
             funnel["buy_attempts"] += 1
-            ok, msg = acc.buy(v["code"], v["name"], v["price"], qty, "trend_reversal",
-                            f"趋势入场: 利润改善+{v['improvement']}pp, ROE={v['roe']}%")
-            if ok:
-                funnel["buys"] += 1
-                lines.append(f"  [买入] {msg}")
-            if len(acc.get_holdings()) >= max_positions:
-                break
+            reason = f"趋势入场: 利润改善+{v['improvement']}pp, ROE={v['roe']}%"
+            try:
+                planned_date = _planned_trade_date(expected_date)
+                _, created = order_book.create_order(
+                    code=v["code"], name=v["name"], direction="BUY", quantity=qty,
+                    signal_trade_date=expected_date, planned_trade_date=planned_date,
+                    signal_reason=reason, reference_close=v["price"],
+                    strategy="trend_reversal", position_qty_at_signal=0,
+                )
+                if created:
+                    lines.append(f"  [买入挂单] {v['name']}：{planned_date} 开盘 {qty}股")
+            except ValueError as exc:
+                lines.append(f"  [买入挂单失败] {v['name']}：{exc}")
 
     # ── 4. 盘后持仓表 + 净值 ──
     tr_rows = _build_trend_holding_rows(
         list(acc.get_holdings()), cfg, lambda code: _get_kline(code, ttl_days=0)
     )
-    acc.record_snapshot()
+    acc.record_snapshot(expected_date)
 
     # ── 5. 基准对比 ──
     bm_price = _get_benchmark_price(today)
     bm_date = _benchmark_last_date()
     performance_allowed = _benchmark_performance_allowed(calendar_info, bm_date)
 
-    # 反推初始资金：现金 + 累计买入 - 累计卖出
-    buy_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "BUY")
-    sell_total = sum(t.price * t.quantity for t in acc.state.trades if t.direction == "SELL")
-    initial_cash = acc.state.cash + buy_total - sell_total
+    # V2 固定从 200 万空仓启动，避免用成交额反推时漏掉费用。
+    initial_cash = 2_000_000.0
     total_ret = (acc.state.total_value / initial_cash) - 1 if initial_cash > 0 else 0
 
     initial_bm = bm_price
@@ -805,8 +938,9 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
         f" → 可交易{funnel['viable']}"
     )
     lines.append(
-        f"  执行结果：可用仓位{entry_slots} | 尝试买入{funnel['buy_attempts']}"
-        f" | 买入{funnel['buys']} | 卖出信号{funnel['sell_signals']} | 卖出{funnel['sells']}"
+        f"  执行结果：可用仓位{entry_slots} | 买入挂单尝试{funnel['buy_attempts']}"
+        f" | 今日买入成交{funnel['buys']} | 卖出信号{funnel['sell_signals']}"
+        f" | 今日卖出成交{funnel['sells']}"
     )
     lines.append(_format_trade_sample(acc.state.trades, acc.state.position_count))
     lines.append(f"\n  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
@@ -820,7 +954,9 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
 
     # 持久化表现
     if not performance_allowed:
-        lines.append(_trend_validation_text(acc.state.trades, today))
+        lines.append(_order_activity_text(order_book, order_outcomes))
+        lines.append(_legacy_trend_snapshot_text())
+        lines.append(_trend_validation_text(acc.state.trades, signal_day, acc.state.created_at))
         return "\n".join(lines)
     rows = []
     if TREND_PERF_FILE.exists():
@@ -828,7 +964,7 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
             rows = pd.read_csv(TREND_PERF_FILE).to_dict("records")
         except Exception:
             pass
-    today_str = today.isoformat()
+    today_str = expected_date
     row = {"date": today_str, "portfolio_value": round(acc.state.total_value, 2),
            "benchmark_price": round(bm_price, 2),
            "portfolio_return": round(total_ret, 4),
@@ -840,7 +976,9 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
     else:
         rows.append(row)
     pd.DataFrame(rows).to_csv(TREND_PERF_FILE, index=False, encoding="utf-8")
-    lines.append(_trend_validation_text(acc.state.trades, today))
+    lines.append(_order_activity_text(order_book, order_outcomes))
+    lines.append(_legacy_trend_snapshot_text())
+    lines.append(_trend_validation_text(acc.state.trades, signal_day, acc.state.created_at))
 
     return "\n".join(lines)
 
@@ -972,11 +1110,15 @@ def daily_update() -> str:
     today = date.today()
     calendar_info = get_expected_trade_date()
     expected_date = str(calendar_info.get("expected_date", ""))
+    signal_day = date.fromisoformat(expected_date) if expected_date else today
     lines.append(
         f"[交易日期] 期望{expected_date or '未知'} | "
         f"来源{calendar_info.get('source', '未知')} | {calendar_info.get('reason', '')}"
     )
     batch_state = _load_batch_state()
+    panic_state = _load_panic_state()
+    deep_order_book = PaperOrderBook(DEEP_ORDER_FILE, "deep_value")
+    deep_order_outcomes = []
     deep_candidate_count = None
     deep_funnel = {
         "batch_plans": len(batch_state),
@@ -1014,45 +1156,10 @@ def daily_update() -> str:
 
     # 1. 更新持仓价格（收集数据用于表格输出）
     cfg = _load_config()
-    hard_stop_pct = cfg["stops"]["hard_stop"]
-    trail_trigger_pct = cfg["take_profit"]["trail_trigger"]
-    trail_drawdown_pct = cfg["take_profit"]["trail_drawdown"]
-
-    dv_rows = []
-    latest_date = ""
-    deep_holding_dates = {}
+    dv_rows, deep_holding_dates = _build_deep_holding_rows(acc, cfg)
     for pos in acc.get_holdings():
-        kline = _get_kline(pos.code, ttl_days=0)
-        if kline.empty:
+        if pos.code not in deep_holding_dates:
             lines.append(f"[{pos.name}] 无法获取K线")
-            continue
-
-        latest = kline.iloc[-1]
-        latest_date = str(kline.index[-1].date())
-        deep_holding_dates[pos.code] = latest_date
-        new_price = float(latest["收盘"])
-
-        old_price = pos.current_price
-        acc.update_price(pos.code, new_price)
-
-        pnl = (new_price / pos.avg_cost - 1) if pos.avg_cost > 0 else 0
-        mkt_val = new_price * pos.quantity
-
-        # 止损/止盈线
-        hard_stop_price = pos.avg_cost * (1 + hard_stop_pct)
-        close_prices = kline["收盘"]
-        if pnl >= trail_trigger_pct:
-            recent_high = float(close_prices.tail(20).max())
-            trail_stop = recent_high * (1 - trail_drawdown_pct)
-            exit_info = f"止盈{trail_stop:.2f}/损{hard_stop_price:.2f}"
-        else:
-            trigger_price = pos.avg_cost * (1 + trail_trigger_pct)
-            exit_info = f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
-
-        dv_rows.append([pos.code, pos.name, f"{pos.quantity:,}",
-                        f"{pos.avg_cost:.2f}", f"{new_price:.2f}",
-                        f"{mkt_val:,.0f}", f"{pnl:+.1%}",
-                        exit_info, pos.strategy or "deep_value"])
 
     deep_gate = _market_date_gate(list(holding_codes), deep_holding_dates, calendar_info)
     deep_frozen = deep_gate["freeze"]
@@ -1069,6 +1176,51 @@ def daily_update() -> str:
         lines.append("  深价仓买卖、账户/持仓/表现写入和深价复盘全部冻结；候选研究继续")
     else:
         acc._save()  # 全部持仓新鲜后才持久化价格
+
+        deep_order_outcomes = execute_due_orders(
+            deep_order_book, acc, expected_date, _get_kline,
+        )
+        # 业务状态以真实成交为准，挂单本身不推进批次。
+        for outcome in deep_order_outcomes:
+            if outcome.get("status") != "FILLED":
+                continue
+            order = deep_order_book.get(outcome["order_id"])
+            if order is None:
+                continue
+            kind = order.metadata.get("kind", "")
+            if kind == "batch_add" and order.code in batch_state:
+                batch_cfg = batch_state[order.code]
+                batch_cfg["batch"] = max(
+                    int(batch_cfg.get("batch", 0)), int(order.metadata["batch_number"]),
+                )
+                batch_cfg["last_batch_date"] = order.fill_trade_date
+            elif kind in {"panic_initial", "panic_add"}:
+                entry = {
+                    "code": order.code,
+                    "name": order.name,
+                    "first_price": float(order.metadata["first_price"]),
+                    "per_batch_qty": int(order.metadata["per_batch_qty"]),
+                }
+                panic_state["active"] = True
+                if not any(item["code"] == order.code for item in panic_state["entries"]):
+                    panic_state["entries"].append(entry)
+                panic_state["batch"] = max(
+                    int(panic_state.get("batch", 0)), int(order.metadata["batch_number"]),
+                )
+        deep_funnel["adds"] = sum(
+            1 for item in deep_order_outcomes
+            if item.get("status") == "FILLED"
+            and deep_order_book.get(item["order_id"])
+            and deep_order_book.get(item["order_id"]).direction == "BUY"
+        )
+        deep_funnel["sells"] = sum(
+            1 for item in deep_order_outcomes
+            if item.get("status") == "FILLED"
+            and deep_order_book.get(item["order_id"])
+            and deep_order_book.get(item["order_id"]).direction == "SELL"
+        )
+        # 成交可能改变持仓，日报必须重建最终持仓行。
+        dv_rows, deep_holding_dates = _build_deep_holding_rows(acc, cfg)
 
     # 2. 止损/止盈检查（考虑分批计划）
     # 先获取 check_monitor 的非止损信号（基本面/时间止损/止盈保留）
@@ -1090,18 +1242,29 @@ def daily_update() -> str:
                         lines.append(f"[{s.name}] 触发标准止损({s.reason})，但还有{len(cfg['batches'])-cfg['batch']}批待执行，放宽至 {relaxed_stop:.2f}")
                         continue  # 跳过，不执行
 
-            # 执行卖出
+            # 收盘生成卖出订单，下一交易日开盘执行；卖单受阻会持续重试。
             kline = _get_kline(code)
-            if _limit_locked(kline, "sell"):
-                deep_funnel["limit_locked"] += 1
-                lines.append(f"  [无法成交] {s.name} 一字跌停，今日无法卖出")
+            if kline.empty:
+                lines.append(f"  [卖出挂单失败] {s.name}：K线缺失")
                 continue
             price = s.price if s.price > 0 else float(kline.iloc[-1]["收盘"])
-            qty = s.quantity if s.quantity > 0 else acc.get_position(code).quantity
-            ok, msg = acc.sell(code, price, qty, s.reason)
-            lines.append(f"  [卖出] {msg}")
-            if ok:
-                deep_funnel["sells"] += 1
+            pos = acc.get_position(code)
+            if pos is None:
+                continue
+            try:
+                planned_date = _planned_trade_date(expected_date)
+                _, created = deep_order_book.create_order(
+                    code=code, name=s.name, direction="SELL", quantity=pos.quantity,
+                    signal_trade_date=expected_date, planned_trade_date=planned_date,
+                    signal_reason=s.reason, reference_close=price,
+                    strategy=pos.strategy or "deep_value",
+                    position_qty_at_signal=pos.quantity, close_position=True,
+                    metadata={"kind": "deep_exit"},
+                )
+                if created:
+                    lines.append(f"  [卖出挂单] {s.name}：{planned_date} 开盘清仓（{s.reason}）")
+            except ValueError as exc:
+                lines.append(f"  [卖出挂单失败] {s.name}：{exc}")
 
     # 3. 检查分批加仓（受 ERP 动态仓位上限 + 行业集中度约束）
     erp_cap_ok, erp_cap_msg = _check_erp_position_cap(acc)
@@ -1126,7 +1289,7 @@ def daily_update() -> str:
         # 批次间冷却期：至少隔5个自然日，防止V型反弹时三批瞬间买完
         last_date = cfg.get("last_batch_date", "")
         if last_date:
-            days_since = (today - date.fromisoformat(last_date)).days
+            days_since = (signal_day - date.fromisoformat(last_date)).days
             if days_since < 5:
                 continue
 
@@ -1138,10 +1301,6 @@ def daily_update() -> str:
             current = float(kline.iloc[-1]["收盘"])
             if current <= trigger:
                 deep_funnel["batch_triggers"] += 1
-                if _limit_locked(kline, "buy"):
-                    deep_funnel["limit_locked"] += 1
-                    lines.append(f"  [无法成交] {cfg['name']} 一字涨停，无法加仓")
-                    continue
                 if not erp_cap_ok:
                     deep_funnel["erp_blocked"] += 1
                     continue
@@ -1153,14 +1312,20 @@ def daily_update() -> str:
                 qty = next_batch["qty"]
                 price = current
                 deep_funnel["add_attempts"] += 1
-                ok, msg = acc.buy(code, cfg["name"], price, qty, "deep_value",
-                                  f"第{batch_num+1}批加仓: 跌至目标价{trigger:.2f}")
-                lines.append(f"  加仓: {msg}")
-                if ok:
-                    deep_funnel["adds"] += 1
-                cfg["batch"] = batch_num + 1
-                cfg["last_batch_date"] = today.isoformat()
-                _save_batch_state(batch_state)  # 立即存盘，防止崩溃丢进度
+                reason = f"第{batch_num+1}批加仓: 跌至目标价{trigger:.2f}"
+                try:
+                    planned_date = _planned_trade_date(expected_date)
+                    _, created = deep_order_book.create_order(
+                        code=code, name=cfg["name"], direction="BUY", quantity=qty,
+                        signal_trade_date=expected_date, planned_trade_date=planned_date,
+                        signal_reason=reason, reference_close=price, strategy="deep_value",
+                        position_qty_at_signal=acc.get_position(code).quantity,
+                        metadata={"kind": "batch_add", "batch_number": batch_num + 1},
+                    )
+                    if created:
+                        lines.append(f"  [加仓挂单] {cfg['name']}：{planned_date} 开盘 {qty}股")
+                except ValueError as exc:
+                    lines.append(f"  [加仓挂单失败] {cfg['name']}：{exc}")
 
         elif trigger == "stable":
             # 企稳触发：站上20日均线 + 成交量放大
@@ -1183,10 +1348,6 @@ def daily_update() -> str:
 
             if above_ma20 and ma60_flatting and volume_ok:
                 deep_funnel["batch_triggers"] += 1
-                if _limit_locked(kline, "buy"):
-                    deep_funnel["limit_locked"] += 1
-                    lines.append(f"  [无法成交] {cfg['name']} 一字涨停，无法加仓")
-                    continue
                 if not erp_cap_ok:
                     deep_funnel["erp_blocked"] += 1
                     continue
@@ -1197,20 +1358,25 @@ def daily_update() -> str:
                     continue
                 qty = next_batch["qty"]
                 deep_funnel["add_attempts"] += 1
-                ok, msg = acc.buy(code, cfg["name"], current, qty, "deep_value",
-                                  f"第{batch_num+1}批加仓: 企稳确认 (站上MA20, 60日线走平, 放量)")
-                lines.append(f"  加仓: {msg}")
-                if ok:
-                    deep_funnel["adds"] += 1
-                cfg["batch"] = batch_num + 1
-                cfg["last_batch_date"] = today.isoformat()
-                _save_batch_state(batch_state)  # 立即存盘
+                reason = f"第{batch_num+1}批加仓: 企稳确认 (站上MA20, 60日线走平, 放量)"
+                try:
+                    planned_date = _planned_trade_date(expected_date)
+                    _, created = deep_order_book.create_order(
+                        code=code, name=cfg["name"], direction="BUY", quantity=qty,
+                        signal_trade_date=expected_date, planned_trade_date=planned_date,
+                        signal_reason=reason, reference_close=current, strategy="deep_value",
+                        position_qty_at_signal=acc.get_position(code).quantity,
+                        metadata={"kind": "batch_add", "batch_number": batch_num + 1},
+                    )
+                    if created:
+                        lines.append(f"  [加仓挂单] {cfg['name']}：{planned_date} 开盘 {qty}股")
+                except ValueError as exc:
+                    lines.append(f"  [加仓挂单失败] {cfg['name']}：{exc}")
 
     # 3.5 恐慌策略
     wl = fetch_market_water_level()
     erp = wl.get("erp", 0)
     panic_cfg = _load_config()["panic"]
-    panic_state = _load_panic_state()
     etf_names = {"510300": "沪深300ETF", "510500": "中证500ETF"}
 
     # 清理已手动卖出的恐慌持仓
@@ -1231,16 +1397,16 @@ def daily_update() -> str:
         if not panic_cap_ok:
             lines.append(f"  [ERP闸门] {panic_cap_msg}，跳过恐慌买入")
         etfs = panic_cfg["etf_list"]
-        per_batch_cash = acc.state.cash * 0.4 / panic_cfg["batches"]
+        available_cash = max(0.0, acc.state.cash - deep_order_book.reserved_cash())
+        per_batch_cash = available_cash * 0.4 / panic_cfg["batches"]
         per_etf_cash = per_batch_cash / len(etfs)
-        entries = []
         for etf_code in etfs:
             if not panic_cap_ok:
                 break
             # 检查是否已持有该ETF（手动买入或其他策略），避免混合成本
             existing = acc.get_position(etf_code)
-            if existing and existing.quantity > 0:
-                lines.append(f"  [恐慌] {etf_names.get(etf_code, etf_code)} 已持仓，跳过恐慌买入")
+            if (existing and existing.quantity > 0) or etf_code in deep_order_book.active_buy_codes():
+                lines.append(f"  [恐慌] {etf_names.get(etf_code, etf_code)} 已持仓或已有挂单，跳过恐慌买入")
                 continue
 
             kline = _get_kline(etf_code, ttl_days=0)
@@ -1249,15 +1415,26 @@ def daily_update() -> str:
             price = float(kline.iloc[-1]["收盘"])
             qty = int(per_etf_cash / price / 100) * 100
             if qty >= 100:
-                ok, msg = acc.buy(etf_code, etf_names.get(etf_code, etf_code),
-                                  price, qty, "panic",
-                                  f"恐慌第1批: ERP={erp:.2%}")
-                lines.append(f"  [恐慌买入] {msg}")
-                entries.append({"code": etf_code, "name": etf_names.get(etf_code, etf_code),
-                              "first_price": price, "per_batch_qty": qty})
-        if entries:
-            panic_state = {"active": True, "batch": 1, "entries": entries}
-            _save_panic_state(panic_state)
+                reason = f"恐慌第1批: ERP={erp:.2%}"
+                try:
+                    planned_date = _planned_trade_date(expected_date)
+                    _, created = deep_order_book.create_order(
+                        code=etf_code, name=etf_names.get(etf_code, etf_code),
+                        direction="BUY", quantity=qty, signal_trade_date=expected_date,
+                        planned_trade_date=planned_date, signal_reason=reason,
+                        reference_close=price, strategy="panic", position_qty_at_signal=0,
+                        metadata={
+                            "kind": "panic_initial", "batch_number": 1,
+                            "first_price": price, "per_batch_qty": qty,
+                        },
+                    )
+                    if created:
+                        lines.append(
+                            f"  [恐慌买入挂单] {etf_names.get(etf_code, etf_code)}："
+                            f"{planned_date} 开盘 {qty}股"
+                        )
+                except ValueError as exc:
+                    lines.append(f"  [恐慌买入挂单失败] {etf_code}：{exc}")
 
     # 恐慌加仓
     elif not deep_frozen and panic_state["active"] and panic_state["batch"] < panic_cfg["batches"]:
@@ -1265,6 +1442,7 @@ def daily_update() -> str:
         if not panic_cap_ok:
             lines.append(f"  [ERP闸门] {panic_cap_msg}，跳过恐慌加仓")
         batch_drop = panic_cfg["batch_drop"]
+        next_panic_batch = panic_state["batch"] + 1
         for entry in panic_state["entries"]:
             if not panic_cap_ok:
                 break
@@ -1276,12 +1454,27 @@ def daily_update() -> str:
             target_price = entry["first_price"] * (1 - target_drop)
             if current <= target_price:
                 qty = entry["per_batch_qty"]
-                ok, msg = acc.buy(entry["code"], entry["name"], current, qty, "panic",
-                                  f"恐慌第{panic_state['batch']+1}批: 跌{target_drop:.0%}至{target_price:.2f}")
-                lines.append(f"  [恐慌加仓] {msg}")
-                panic_state["batch"] += 1
-                _save_panic_state(panic_state)
-                break
+                reason = f"恐慌第{next_panic_batch}批: 跌{target_drop:.0%}至{target_price:.2f}"
+                try:
+                    planned_date = _planned_trade_date(expected_date)
+                    position = acc.get_position(entry["code"])
+                    if position is None:
+                        continue
+                    _, created = deep_order_book.create_order(
+                        code=entry["code"], name=entry["name"], direction="BUY",
+                        quantity=qty, signal_trade_date=expected_date,
+                        planned_trade_date=planned_date, signal_reason=reason,
+                        reference_close=current, strategy="panic",
+                        position_qty_at_signal=position.quantity,
+                        metadata={
+                            "kind": "panic_add", "batch_number": next_panic_batch,
+                            "first_price": entry["first_price"], "per_batch_qty": qty,
+                        },
+                    )
+                    if created:
+                        lines.append(f"  [恐慌加仓挂单] {entry['name']}：{planned_date} 开盘 {qty}股")
+                except ValueError as exc:
+                    lines.append(f"  [恐慌加仓挂单失败] {entry['name']}：{exc}")
 
     # 恐慌退出
     if not deep_frozen and panic_state["active"] and erp < panic_cfg["exit_erp"]:
@@ -1290,15 +1483,37 @@ def daily_update() -> str:
             code = entry["code"]
             pos = acc.get_position(code)
             if pos:
-                ok, msg = acc.sell(code, pos.current_price, pos.quantity,
-                                   f"恐慌退出: ERP回落至{erp:.2%}")
-                lines.append(f"  [恐慌卖出] {msg}")
+                try:
+                    planned_date = _planned_trade_date(expected_date)
+                    _, created = deep_order_book.create_order(
+                        code=code, name=entry["name"], direction="SELL",
+                        quantity=pos.quantity, signal_trade_date=expected_date,
+                        planned_trade_date=planned_date,
+                        signal_reason=f"恐慌退出: ERP回落至{erp:.2%}",
+                        reference_close=pos.current_price, strategy="panic",
+                        position_qty_at_signal=pos.quantity, close_position=True,
+                        metadata={"kind": "panic_exit"},
+                    )
+                    if created:
+                        lines.append(f"  [恐慌卖出挂单] {entry['name']}：{planned_date} 开盘清仓")
+                except ValueError as exc:
+                    lines.append(f"  [恐慌卖出挂单失败] {entry['name']}：{exc}")
+
+    panic_sell_codes = {
+        order.code for order in deep_order_book.active_orders()
+        if order.direction == "SELL" and order.metadata.get("kind") == "panic_exit"
+    }
+    if panic_state["active"] and panic_state["entries"] and all(
+        entry["code"] not in acc.get_holding_codes()
+        and entry["code"] not in panic_sell_codes
+        for entry in panic_state["entries"]
+    ):
         panic_state = {"active": False, "batch": 0, "entries": []}
-        _save_panic_state(panic_state)
+        lines.append("[恐慌] 退出订单已全部成交，退出恐慌模式")
 
     # 4. 记录净值
     if not deep_frozen:
-        acc.record_snapshot()
+        acc.record_snapshot(expected_date)
 
     # 数据新鲜度（取任一持仓K线日期）
     data_date = min(deep_holding_dates.values(), default=expected_date or "未知")
@@ -1346,11 +1561,11 @@ def daily_update() -> str:
 
     # 4.2 持久化表现日志
     if performance_allowed:
-        _save_performance_log(acc, bm_price)
+        _save_performance_log(acc, bm_price, expected_date)
 
     # 5. 保存持仓快照到 CSV
     if not deep_frozen:
-        _save_holdings_snapshot(acc)
+        _save_holdings_snapshot(acc, expected_date)
 
     # 6. 持久化（周报/月报之前先存盘，防止review崩溃丢进度）
     if not deep_frozen:
@@ -1432,12 +1647,12 @@ def daily_update() -> str:
     lines.append(
         f"  分批加仓：计划{deep_funnel['batch_plans']} | 触发{deep_funnel['batch_triggers']}"
         f" | ERP拦截{deep_funnel['erp_blocked']} | 行业拦截{deep_funnel['industry_blocked']}"
-        f" | 一字板拦截{deep_funnel['limit_locked']} | 尝试{deep_funnel['add_attempts']}"
-        f" | 成交{deep_funnel['adds']}"
+        f" | 挂单尝试{deep_funnel['add_attempts']} | 今日买入成交{deep_funnel['adds']}"
     )
     lines.append(
-        f"  卖出：信号{deep_funnel['sell_signals']} | 成交{deep_funnel['sells']}"
+        f"  卖出：信号{deep_funnel['sell_signals']} | 今日成交{deep_funnel['sells']}"
     )
+    lines.append(_order_activity_text(deep_order_book, deep_order_outcomes))
     lines.append(_format_trade_sample(acc.state.trades, acc.state.position_count))
 
     # 8.4 候选池假设性买入追踪
@@ -1583,10 +1798,11 @@ def daily_update() -> str:
     return report
 
 
-def _save_performance_log(acc: VirtualAccount, bm_price: float):
+def _save_performance_log(
+        acc: VirtualAccount, bm_price: float, snapshot_date: str | None = None):
     """保存每日表现日志（含基准对比）"""
     path = OUTPUT_DIR / "performance.csv"
-    today_str = date.today().isoformat()
+    today_str = snapshot_date or date.today().isoformat()
     initial = _load_config()["account"]["initial_cash"]
 
     rows = []
@@ -1632,13 +1848,13 @@ def _save_performance_log(acc: VirtualAccount, bm_price: float):
     pd.DataFrame(rows).to_csv(path, index=False, encoding="utf-8")
 
 
-def _save_holdings_snapshot(acc: VirtualAccount):
+def _save_holdings_snapshot(acc: VirtualAccount, snapshot_date: str | None = None):
     """保存持仓快照"""
     path = OUTPUT_DIR / "holdings.csv"
     rows = []
     for p in acc.get_holdings():
         rows.append({
-            "date": date.today().isoformat(),
+            "date": snapshot_date or date.today().isoformat(),
             "code": p.code,
             "name": p.name,
             "quantity": p.quantity,

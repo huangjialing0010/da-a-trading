@@ -14,7 +14,11 @@ from .data_fetcher import fetch_market_water_level, fetch_daily_kline
 from .screener import load_candidates
 from .industry_analyzer import get_all_industry_scores, get_industry_distribution
 from .report_markdown import refresh_reports_index
-from .validation import build_virtual_validation_status, virtual_validation_markdown
+from .validation import (
+    build_virtual_validation_status,
+    v2_validation_dates,
+    virtual_validation_markdown,
+)
 
 BASE_DIR = Path(__file__).parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
@@ -65,7 +69,7 @@ def _exit_info(pos, cfg=None) -> str:
 def _combined_overview_section() -> list:
     """生成"深价+趋势"合仓总览（周报/月报共用）。"""
     deep_file = OUTPUT_DIR / "performance.csv"
-    trend_file = OUTPUT_DIR / "performance_trend.csv"
+    trend_file = OUTPUT_DIR / "performance_trend_v2.csv"
     bench_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
     if not deep_file.exists() or not trend_file.exists():
         return []
@@ -525,7 +529,7 @@ def monthly_review(acc: VirtualAccount = None, target_month: date = None) -> str
 # 趋势策略周报
 # ============================================================
 
-TREND_ACCOUNT_FILE = str(OUTPUT_DIR / "account_trend.json")
+TREND_ACCOUNT_FILE = str(OUTPUT_DIR / "account_trend_v2.json")
 
 
 def _load_trend_account() -> VirtualAccount:
@@ -583,13 +587,15 @@ def trend_weekly_review() -> str:
     lines.extend(_combined_overview_section())
 
     # 修复后有效样本与未来实盘讨论门槛（纯虚拟盘）
-    trend_perf_file = OUTPUT_DIR / "performance_trend.csv"
+    trend_perf_file = OUTPUT_DIR / "performance_trend_v2.csv"
     try:
         validation_perf = pd.read_csv(trend_perf_file)
     except Exception:
         validation_perf = pd.DataFrame()
+    cutover, review_date = v2_validation_dates(acc.state.created_at)
     validation_status = build_virtual_validation_status(
-        acc.state.trades, validation_perf, as_of=today
+        acc.state.trades, validation_perf, as_of=today,
+        cutover=cutover, review_date=review_date,
     )
     lines.extend(virtual_validation_markdown(validation_status))
 
@@ -798,7 +804,7 @@ def trend_monthly_review(target_month: date = None) -> str:
     # 累计表现跟踪
     lines.append("## 四、累计表现")
     lines.append("")
-    perf_file = OUTPUT_DIR / "performance_trend.csv"
+    perf_file = OUTPUT_DIR / "performance_trend_v2.csv"
     if perf_file.exists():
         try:
             import pandas as pd

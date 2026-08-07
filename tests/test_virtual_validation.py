@@ -4,7 +4,12 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from tools.validation import build_virtual_validation_status, format_virtual_validation_text
+from tools.validation import (
+    add_calendar_months,
+    build_virtual_validation_status,
+    format_virtual_validation_text,
+    v2_validation_dates,
+)
 
 
 def trade(day: str, direction: str, code="000001", quantity=100):
@@ -122,6 +127,21 @@ class ReadinessGateTest(unittest.TestCase):
         )
         self.assertFalse(status["ready"])
         self.assertEqual(status["status"], "未通过")
+
+
+class V2ValidationDateTest(unittest.TestCase):
+    def test_review_is_six_months_after_v2_start_when_later(self):
+        cutover, review = v2_validation_dates("2026-08-07T09:30:00")
+        self.assertEqual(cutover, date(2026, 8, 7))
+        self.assertEqual(review, date(2027, 2, 7))
+
+    def test_review_keeps_fixed_floor_when_six_months_is_earlier(self):
+        cutover, review = v2_validation_dates("2026-06-15T09:30:00")
+        self.assertEqual(cutover, date(2026, 6, 15))
+        self.assertEqual(review, date(2027, 1, 1))
+
+    def test_calendar_month_addition_clamps_month_end(self):
+        self.assertEqual(add_calendar_months(date(2026, 8, 31), 6), date(2027, 2, 28))
 
 
 if __name__ == "__main__":

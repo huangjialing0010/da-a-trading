@@ -170,7 +170,8 @@ class VirtualAccount:
     # ---- 交易操作 ----
 
     def buy(self, code: str, name: str, price: float, quantity: int,
-            strategy: str, reason: str) -> tuple[bool, str]:
+            strategy: str, reason: str,
+            trade_time: str | None = None) -> tuple[bool, str]:
         """买入。返回 (成功?, 消息)"""
         if quantity % 100 != 0:
             return False, "A股最小交易单位100股"
@@ -203,7 +204,7 @@ class VirtualAccount:
             )
 
         trade = Trade(
-            time=datetime.now().isoformat(), code=code, name=name,
+            time=trade_time or datetime.now().isoformat(), code=code, name=name,
             direction="BUY", price=exec_price, quantity=quantity, reason=reason
         )
         self.state.trades.append(trade)
@@ -214,7 +215,7 @@ class VirtualAccount:
         return True, msg
 
     def sell(self, code: str, price: float, quantity: int,
-             reason: str) -> tuple[bool, str]:
+             reason: str, trade_time: str | None = None) -> tuple[bool, str]:
         """卖出。返回 (成功?, 消息)"""
         if code not in self.state.positions:
             return False, f"未持仓 {code}"
@@ -244,7 +245,7 @@ class VirtualAccount:
             del self.state.positions[code]
 
         trade = Trade(
-            time=datetime.now().isoformat(), code=code, name=pos.name,
+            time=trade_time or datetime.now().isoformat(), code=code, name=pos.name,
             direction="SELL", price=exec_price, quantity=quantity, reason=reason, pnl=pnl
         )
         self.state.trades.append(trade)

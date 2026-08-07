@@ -1,5 +1,6 @@
 """纯虚拟盘有效样本与未来实盘讨论门槛。只计算，不修改账户。"""
 
+import calendar
 from datetime import date
 
 import pandas as pd
@@ -11,6 +12,21 @@ NEXT_REVIEW_DATE = date(2027, 4, 1)
 MIN_ROUND_TRIPS = 30
 MIN_ALPHA = 0.0
 MIN_MAX_DRAWDOWN = -0.50
+
+
+def add_calendar_months(value: date, months: int) -> date:
+    """按日历月推进日期，月底取目标月最后一天。"""
+    month_index = value.year * 12 + value.month - 1 + months
+    year, month_zero = divmod(month_index, 12)
+    month = month_zero + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def v2_validation_dates(created_at: str) -> tuple[date, date]:
+    """V2 切点及首次审查日：启动满6个月与既有日期取较晚者。"""
+    cutover = date.fromisoformat(str(created_at)[:10])
+    return cutover, max(FIRST_REVIEW_DATE, add_calendar_months(cutover, 6))
 
 
 def _trade_value(trade, name: str, default=None):
@@ -146,7 +162,7 @@ def build_virtual_validation_status(
         result["status"] = "验证中"
     elif not conditions["round_trips"]:
         result["status"] = "样本不足"
-        result["next_review_date"] = NEXT_REVIEW_DATE.isoformat()
+        result["next_review_date"] = add_calendar_months(review_date, 3).isoformat()
     elif all(conditions.values()):
         result["status"] = "可讨论小额实盘"
         result["ready"] = True
