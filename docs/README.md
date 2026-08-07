@@ -21,7 +21,8 @@
 | `superpowers/specs/2026-08-07-trend-date-safety-design.md` | 已实施并升级 | 持仓日期安全；熔断已由绝对交易日设计升级 |
 | `superpowers/specs/2026-08-07-trend-post-trade-holdings-design.md` | 已实施 | 趋势盘后持仓报告一致性 |
 | `superpowers/specs/2026-08-07-virtual-validation-dashboard-design.md` | 已被 V2 取代 | 保留为历史决策，不作为当前口径 |
-| `superpowers/specs/2026-08-07-minimal-selection-enhancement-design.md` | 部分实施 | 日报隔离已完成；结构化五问、深价准入和前瞻追踪待实施 |
+| `superpowers/specs/2026-08-07-minimal-selection-enhancement-design.md` | 部分实施/暂缓 | 日报隔离已完成；完整五问与前瞻追踪暂缓，首仓改走最小闭环 |
+| `superpowers/specs/2026-08-07-minimal-deep-entry-design.md` | 待实施 | 用最小结构化建议闭合普通深价候选到 T+1 虚拟首仓订单；完整五问平台暂缓 |
 | `superpowers/specs/2026-08-07-p0-runtime-reliability-design.md` | 已实施 | GBK输出、研究队列文案与深价语义幂等 |
 
 ## 维护规则
