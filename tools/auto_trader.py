@@ -464,6 +464,37 @@ TREND_ACCOUNT_FILE = str(OUTPUT_DIR / "account_trend.json")
 TREND_PERF_FILE = OUTPUT_DIR / "performance_trend.csv"
 
 
+def _trend_holding_row(pos: Position, cfg: dict, kline: "pd.DataFrame") -> list[str]:
+    """用最终持仓状态和已缓存K线生成一行趋势持仓报告。"""
+    price = pos.current_price
+    pnl = (price / pos.avg_cost - 1) if pos.avg_cost > 0 else 0
+    mkt_val = price * pos.quantity
+    hard_stop_pct = cfg["stops"]["hard_stop"]
+    trail_trigger_pct = cfg["take_profit"]["trail_trigger"]
+    trail_drawdown_pct = cfg["take_profit"]["trail_drawdown"]
+    hard_stop_price = pos.avg_cost * (1 + hard_stop_pct)
+    if pnl >= trail_trigger_pct and kline is not None and not kline.empty:
+        recent_high = float(kline["收盘"].tail(20).max())
+        trail_stop = recent_high * (1 - trail_drawdown_pct)
+        exit_info = f"止盈{trail_stop:.2f}/损{hard_stop_price:.2f}"
+    else:
+        trigger_price = pos.avg_cost * (1 + trail_trigger_pct)
+        exit_info = f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
+    return [
+        pos.code, pos.name, f"{pos.quantity:,}", f"{pos.avg_cost:.2f}",
+        f"{price:.2f}", f"{mkt_val:,.0f}", f"{pnl:+.1%}", exit_info,
+        pos.strategy or "trend_reversal",
+    ]
+
+
+def _build_trend_holding_rows(holdings: list[Position], cfg: dict, kline_getter) -> list[list[str]]:
+    """从同一时点的最终持仓生成趋势表格；K线由调用方缓存提供。"""
+    return [
+        _trend_holding_row(pos, cfg, kline_getter(pos.code))
+        for pos in holdings
+    ]
+
+
 def trend_daily_update(calendar_info: dict | None = None) -> str:
     """趋势策略虚拟仓 — 独立于深价主仓，纸上测试趋势反转策略"""
     socket.setdefaulttimeout(15)
@@ -515,40 +546,18 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
 
     # ── 1. 更新持仓价格 ──
     cfg = _load_config()
-    hard_stop_pct = cfg["stops"]["hard_stop"]
-    trail_trigger_pct = cfg["take_profit"]["trail_trigger"]
-    trail_drawdown_pct = cfg["take_profit"]["trail_drawdown"]
-
     tr_rows = []
     holdings = list(acc.get_holdings())
     holding_codes = [pos.code for pos in holdings]
     holding_data_dates = {}
     for pos in holdings:
-        kline = fetch_daily_kline(pos.code, ttl_days=0)
+        kline = _get_kline(pos.code, ttl_days=0)
         if kline.empty:
             continue
         holding_data_dates[pos.code] = str(kline.index[-1].date())
         new_price = float(kline.iloc[-1]["收盘"])
-        old_price = pos.current_price
         acc.update_price(pos.code, new_price)
-        pnl = (new_price / pos.avg_cost - 1) if pos.avg_cost > 0 else 0
-        mkt_val = new_price * pos.quantity
-
-        # 止损/止盈线
-        hard_stop_price = pos.avg_cost * (1 + hard_stop_pct)
-        close_prices = kline["收盘"]
-        if pnl >= trail_trigger_pct:
-            recent_high = float(close_prices.tail(20).max())
-            trail_stop = recent_high * (1 - trail_drawdown_pct)
-            exit_info = f"止盈{trail_stop:.2f}/损{hard_stop_price:.2f}"
-        else:
-            trigger_price = pos.avg_cost * (1 + trail_trigger_pct)
-            exit_info = f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
-
-        tr_rows.append([pos.code, pos.name, f"{pos.quantity:,}",
-                        f"{pos.avg_cost:.2f}", f"{new_price:.2f}",
-                        f"{mkt_val:,.0f}", f"{pnl:+.1%}",
-                        exit_info, pos.strategy or "trend_reversal"])
+        tr_rows.append(_trend_holding_row(pos, cfg, kline))
 
     # ── 1.5 数据熔断：趋势仓独立核对全部持仓是否覆盖期望交易日 ──
     freshness = _market_date_gate(holding_codes, holding_data_dates, calendar_info)
@@ -686,7 +695,7 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
                 continue  # 仍在恶化
 
             # 检查52周价格门
-            kline = fetch_daily_kline(code)
+            kline = _get_kline(code)
             if kline.empty or len(kline) < 250:
                 funnel["kline_unavailable"] += 1
                 continue
@@ -737,7 +746,10 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
             if len(acc.get_holdings()) >= max_positions:
                 break
 
-    # ── 4. 净值 ──
+    # ── 4. 盘后持仓表 + 净值 ──
+    tr_rows = _build_trend_holding_rows(
+        list(acc.get_holdings()), cfg, lambda code: _get_kline(code, ttl_days=0)
+    )
     acc.record_snapshot()
 
     # ── 5. 基准对比 ──
