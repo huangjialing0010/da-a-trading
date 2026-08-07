@@ -425,6 +425,25 @@ def execute_due_orders(
             except (KeyError, TypeError, ValueError) as exc:
                 outcome = _mark_blocked(order, f"开盘价非法: {exc}")
                 break
+            if order.direction == "BUY" and (order.metadata or {}).get("kind") == "deep_initial":
+                try:
+                    price_min = float(order.metadata["buy_price_min"])
+                    price_max = float(order.metadata["buy_price_max"])
+                    valid_until = _date_text(order.metadata["valid_until"])
+                    if price_min <= 0 or price_max < price_min:
+                        raise ValueError("价格区间非法")
+                except (KeyError, TypeError, ValueError) as exc:
+                    outcome = _mark_canceled(order, f"深价首仓建议元数据无效: {exc}")
+                    break
+                if trade_date > valid_until:
+                    outcome = _mark_canceled(order, f"深价首仓建议已于{valid_until}失效")
+                    break
+                if not price_min <= open_price <= price_max:
+                    outcome = _mark_canceled(
+                        order,
+                        f"开盘价{open_price:.2f}超出建议区间{price_min:.2f}~{price_max:.2f}",
+                    )
+                    break
             if _one_price_locked(frame, trade_date, "buy" if order.direction == "BUY" else "sell"):
                 if order.direction == "BUY":
                     outcome = _mark_canceled(order, "计划成交日一字涨停，取消买单")

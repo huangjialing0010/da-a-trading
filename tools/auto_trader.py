@@ -25,6 +25,11 @@ from .data_fetcher import (
     get_expected_trade_date,
 )
 from .paper_orders import PaperOrderBook, execute_due_orders, next_trade_date
+from .deep_entry import (
+    deep_initial_risk_reason,
+    format_deep_entry_report,
+    generate_deep_initial_orders,
+)
 from .signal_engine import check_monitor
 from .industry_analyzer import get_stock_industry
 from .commodity_fetcher import check_commodity_cycle
@@ -482,6 +487,26 @@ def _trade_calendar_dates() -> list[str]:
 
 def _planned_trade_date(signal_date: str) -> str:
     return next_trade_date(signal_date, _trade_calendar_dates())
+
+
+def _latest_close_and_date(code: str) -> tuple[float, str]:
+    """读取候选最新收盘价和行情日期；调用方负责核对信号日。"""
+    frame = _get_kline(code, ttl_days=0)
+    if frame is None or frame.empty:
+        raise ValueError("K线缺失")
+    try:
+        close_price = float(frame.iloc[-1]["收盘"])
+        if "日期" in frame.columns:
+            quote_date = str(frame.iloc[-1]["日期"])[:10]
+        else:
+            value = frame.index[-1]
+            quote_date = value.date().isoformat() if hasattr(value, "date") else str(value)[:10]
+        quote_date = date.fromisoformat(quote_date).isoformat()
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"K线收盘价或日期非法: {exc}") from exc
+    if close_price <= 0:
+        raise ValueError("K线收盘价非正数")
+    return close_price, quote_date
 
 
 def _order_activity_text(book: PaperOrderBook, outcomes: list[dict]) -> str:
@@ -1148,6 +1173,8 @@ def daily_update() -> str:
     deep_order_book = PaperOrderBook(DEEP_ORDER_FILE, "deep_value")
     deep_order_outcomes = []
     deep_candidate_count = None
+    deep_candidate_rows = None
+    deep_entry_results = []
     deep_funnel = {
         "batch_plans": len(batch_state),
         "batch_triggers": 0,
@@ -1638,8 +1665,9 @@ def daily_update() -> str:
         held = set(acc.get_holding_codes())
         try:
             import pandas as pd
-            dv_df = pd.read_csv(OUTPUT_DIR / "candidates.csv")
+            dv_df = pd.read_csv(OUTPUT_DIR / "candidates.csv", dtype={"code": str})
             deep_candidate_count = len(dv_df)
+            deep_candidate_rows = dv_df.to_dict("records")
             dv_new = [f"{str(r['code']).zfill(6)} {r['name']}" for _, r in dv_df.iterrows()
                       if str(r['code']).zfill(6) not in held]
             if dv_new:
@@ -1661,6 +1689,57 @@ def daily_update() -> str:
     except Exception as e:
         lines.append(f"\n[候选池] 刷新失败: {e}")
 
+    # 8.1 普通深价首仓：仅消费已入库的结构化 BUY 建议。
+    if deep_frozen:
+        deep_entry_results = [{
+            "code": "------", "name": "系统", "status": "BLOCKED",
+            "reason": "深价仓数据熔断，禁止生成新首仓订单",
+        }]
+    elif not expected_date:
+        deep_entry_results = [{
+            "code": "------", "name": "系统", "status": "BLOCKED",
+            "reason": "交易日历不可判定，禁止生成新首仓订单",
+        }]
+    elif deep_candidate_rows is None:
+        deep_entry_results = [{
+            "code": "------", "name": "系统", "status": "BLOCKED",
+            "reason": "深价候选池不可用，禁止生成新首仓订单",
+        }]
+    else:
+        try:
+            from .data_fetcher import get_erp_position_cap
+
+            try:
+                entry_erp_cap = float(get_erp_position_cap()["cap"])
+            except Exception:
+                entry_erp_cap = 0.30
+            planned_date = _planned_trade_date(expected_date)
+            entry_account_config = _load_config()["account"]
+
+            def _risk_checker(recommendation, price):
+                return deep_initial_risk_reason(
+                    recommendation, price, account=acc, order_book=deep_order_book,
+                    account_config=entry_account_config, erp_cap=entry_erp_cap,
+                    industry_lookup=get_stock_industry,
+                )
+
+            deep_entry_results = generate_deep_initial_orders(
+                deep_candidate_rows,
+                research_dir=OUTPUT_DIR / "research",
+                account=acc,
+                order_book=deep_order_book,
+                signal_trade_date=expected_date,
+                planned_trade_date=planned_date,
+                quote_getter=_latest_close_and_date,
+                risk_checker=_risk_checker,
+                max_orders=2,
+            )
+        except Exception as exc:
+            deep_entry_results = [{
+                "code": "------", "name": "系统", "status": "BLOCKED",
+                "reason": f"深价首仓规划异常: {exc}",
+            }]
+
     candidate_text = "不可用" if deep_candidate_count is None else str(deep_candidate_count)
     total_value = acc.state.total_value
     pos_ratio = acc.state.total_market_value / total_value if total_value > 0 else 0.0
@@ -1670,7 +1749,7 @@ def daily_update() -> str:
         f"  状态：持仓{acc.state.position_count}只 | 仓位{pos_ratio:.1%} | {erp_text}"
     )
     lines.append(
-        f"  候选：{candidate_text}只 | 人工决策模式，不自动开新仓"
+        f"  候选：{candidate_text}只 | 仅结构化BUY建议自动生成T+1首仓（单日最多2张）"
     )
     lines.append(
         f"  分批加仓：计划{deep_funnel['batch_plans']} | 触发{deep_funnel['batch_triggers']}"
@@ -1682,6 +1761,7 @@ def daily_update() -> str:
     )
     lines.append(_order_activity_text(deep_order_book, deep_order_outcomes))
     lines.append(_format_trade_sample(acc.state.trades, acc.state.position_count))
+    lines.append(format_deep_entry_report(deep_entry_results))
 
     # 8.4 候选池假设性买入追踪
     try:

@@ -160,6 +160,29 @@ class PaperOrderBookTest(unittest.TestCase):
         self.assertIn("一字涨停", saved.last_block_reason)
         self.assertEqual(self.account.state.trades, [])
 
+    def test_deep_initial_open_outside_recommendation_range_is_canceled(self):
+        order, _ = self.create_buy(
+            strategy="deep_value",
+            metadata={
+                "kind": "deep_initial",
+                "decision_id": "DV-20260807-000001-01",
+                "buy_price_min": 9.5,
+                "buy_price_max": 10.5,
+                "valid_until": "2026-08-10",
+            },
+        )
+        frame = kline([
+            {"日期": "2026-08-07", "开盘": 10.0, "最高": 10.2, "最低": 9.9, "收盘": 10.0},
+            {"日期": "2026-08-10", "开盘": 10.8, "最高": 11.0, "最低": 10.7, "收盘": 10.9},
+        ])
+
+        execute_due_orders(self.book, self.account, "2026-08-10", lambda _code: frame)
+
+        saved = self.book.get(order.order_id)
+        self.assertEqual(saved.status, "CANCELED")
+        self.assertIn("建议区间", saved.last_block_reason)
+        self.assertEqual(self.account.state.trades, [])
+
     def test_cash_shortfall_cancels_without_resizing(self):
         order, _ = self.create_buy(quantity=10_000)
         frame = kline([
