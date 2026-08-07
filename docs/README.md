@@ -22,6 +22,7 @@
 | `superpowers/specs/2026-08-07-trend-post-trade-holdings-design.md` | 已实施 | 趋势盘后持仓报告一致性 |
 | `superpowers/specs/2026-08-07-virtual-validation-dashboard-design.md` | 已被 V2 取代 | 保留为历史决策，不作为当前口径 |
 | `superpowers/specs/2026-08-07-minimal-selection-enhancement-design.md` | 部分实施 | 日报隔离已完成；结构化五问、深价准入和前瞻追踪待实施 |
+| `superpowers/specs/2026-08-07-p0-runtime-reliability-design.md` | 待实施 | GBK输出、研究队列文案与深价语义幂等 |
 
 ## 维护规则
 
