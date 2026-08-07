@@ -474,6 +474,38 @@ def screen_event_arb(config: dict) -> list[Candidate]:
 
 # === 趋势改善扫描（研究工具，不入自动交易） ===
 
+def _select_trend_candidates(results: list[dict], n: int = 10) -> tuple[list[dict], dict]:
+    """先应用交易端既有基础质量条件，再按改善幅度选前 n 只。"""
+    funnel = {
+        "improvement_gt_500": 0,
+        "improvement_lt_5": 0,
+        "roe_lt_6": 0,
+        "current_yoy_lt_minus_20": 0,
+        "eligible": 0,
+    }
+    eligible = []
+    for row in results:
+        improvement = float(row.get("improvement", 0) or 0)
+        roe = float(row.get("roe", 0) or 0)
+        current_yoy = float(row.get("current_yoy", 0) or 0)
+        if improvement > 500:
+            funnel["improvement_gt_500"] += 1
+            continue
+        if improvement < 5:
+            funnel["improvement_lt_5"] += 1
+            continue
+        if roe < 6:
+            funnel["roe_lt_6"] += 1
+            continue
+        if current_yoy < -20:
+            funnel["current_yoy_lt_minus_20"] += 1
+            continue
+        eligible.append(row)
+
+    eligible.sort(key=lambda x: x["improvement"], reverse=True)
+    funnel["eligible"] = len(eligible)
+    return eligible[:n], funnel
+
 def scan_trend_improvement(n: int = 10) -> list[dict]:
     """扫描同报告期利润YoY改善最多的股票。
     取最新报告期的同月份历史数据，比较利润YoY变化幅度。
@@ -488,6 +520,8 @@ def scan_trend_improvement(n: int = 10) -> list[dict]:
     config = load_config()
     dv = config["deep_value"]
     universe = fetch_stock_universe()
+    if universe.empty:
+        raise RuntimeError("沪深300股票池不可用，趋势候选刷新冻结")
     results = []
 
     total = min(len(universe), dv.get("universe_top_n", 70))
@@ -556,14 +590,19 @@ def scan_trend_improvement(n: int = 10) -> list[dict]:
             "report_date": latest["_rpt"],
         })
 
-    results.sort(key=lambda x: x["improvement"], reverse=True)
-    top = results[:n]
+    top, funnel = _select_trend_candidates(results, n=n)
+    print(
+        "[trend_scan] 前置漏斗: "
+        f">500pp {funnel['improvement_gt_500']} | <5pp {funnel['improvement_lt_5']} | "
+        f"ROE<6% {funnel['roe_lt_6']} | 当前同比<-20% {funnel['current_yoy_lt_minus_20']} | "
+        f"合格{funnel['eligible']}"
+    )
 
     # 保存
     if top:
         df_out = pd.DataFrame(top)
         df_out.to_csv(OUTPUT_DIR / "trend_candidates.csv", index=False, encoding="utf-8")
-        print(f"[trend_scan] 趋势改善TOP{n}: {len(top)} 只 -> {OUTPUT_DIR / 'trend_candidates.csv'}")
+        print(f"[trend_scan] 趋势改善合格TOP{n}: {len(top)} 只 -> {OUTPUT_DIR / 'trend_candidates.csv'}")
     else:
         print("[trend_scan] 无趋势改善候选")
 
@@ -586,9 +625,11 @@ def run_full_screening(n: int = 30, quick: bool = False) -> dict:
 
     # 趋势改善扫描（研究工具）
     try:
-        scan_trend_improvement()
+        trend_candidates = scan_trend_improvement()
+        results["trend_scan_status"] = {"status": "ok", "count": len(trend_candidates)}
     except Exception as e:
         print(f"[trend_scan] 失败: {e}")
+        results["trend_scan_status"] = {"status": "frozen", "reason": str(e)}
 
     # 行业分布
     dv_codes = [c.code for c in results["deep_value"]]

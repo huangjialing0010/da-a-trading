@@ -563,46 +563,74 @@ def fetch_market_water_level() -> dict:
 
 # === 股票池 ===
 
-def fetch_stock_universe() -> pd.DataFrame:
-    """获取筛选股票池：沪深300成分股"""
-    cache_file = _cache_path(MARKET_DIR, "stock_universe")
-    if _cache_valid(cache_file, ttl_days=7):
-        df = pd.read_csv(cache_file, dtype={"code": str})
-        df["code"] = df["code"].str.zfill(6)
-        return df
+def _validated_hs300_universe(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    """返回规范化的沪深300成分表；来源、列或数量不可信时返回 None。"""
+    required = {"code", "name", "index"}
+    if df is None or df.empty or not required.issubset(df.columns):
+        return None
+    normalized = df[["code", "name", "index"]].copy()
+    normalized["code"] = normalized["code"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True).str.zfill(6)
+    normalized["name"] = normalized["name"].astype(str).str.strip()
+    normalized["index"] = normalized["index"].astype(str).str.strip()
+    normalized = normalized.drop_duplicates(subset=["code"]).reset_index(drop=True)
+    if not 250 <= len(normalized) <= 350:
+        return None
+    if set(normalized["index"]) != {"沪深300"}:
+        return None
+    if not normalized["code"].str.fullmatch(r"\d{6}").all():
+        return None
+    return normalized
 
-    stocks = {}
-    try:
-        for idx_code, idx_name in [("000300", "沪深300")]:
-            df = ak.index_stock_cons_csindex(symbol=idx_code)
-            if df is not None and not df.empty:
-                code_col = df.columns[4]
-                name_col = df.columns[5]
-                for _, row in df.iterrows():
-                    code = str(row[code_col]).zfill(6)
-                    name = str(row[name_col])
-                    if code not in stocks:
-                        stocks[code] = {"code": code, "name": name, "index": idx_name}
-        print(f"[data_fetcher] 股票池: {len(stocks)} 只 (沪深300)")
-    except Exception as e:
-        print(f"[data_fetcher] 获取成分股失败: {e}")
-        # 降级：用全量股票代码
+
+def _normalize_hs300_provider_frame(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    if df is None or df.empty:
+        return None
+    if {"code", "name"}.issubset(df.columns):
+        code_col, name_col = "code", "name"
+    elif len(df.columns) >= 6:
+        code_col, name_col = df.columns[4], df.columns[5]
+    else:
+        return None
+    normalized = pd.DataFrame({
+        "code": df[code_col],
+        "name": df[name_col],
+        "index": "沪深300",
+    })
+    return _validated_hs300_universe(normalized)
+
+
+def fetch_stock_universe(
+        cache_file: str | Path | None = None, fetcher=None, ttl_days: int = 7) -> pd.DataFrame:
+    """获取并验证沪深300股票池；失败时只使用最后有效的沪深300缓存。"""
+    cache_path = Path(cache_file) if cache_file is not None else Path(
+        _cache_path(MARKET_DIR, "stock_universe")
+    )
+    fetcher = fetcher or ak.index_stock_cons_csindex
+    cached = None
+    if cache_path.exists():
         try:
-            df_all = ak.stock_info_a_code_name()
-            if df_all is not None and not df_all.empty:
-                for _, row in df_all.iterrows():
-                    code = str(row["code"]).zfill(6)
-                    name = str(row["name"])
-                    if "ST" not in name and "退" not in name:
-                        stocks[code] = {"code": code, "name": name, "index": "全市场"}
-                print(f"[data_fetcher] 降级全市场: {len(stocks)} 只")
-        except Exception as e2:
-            print(f"[data_fetcher] 降级也失败: {e2}")
+            cached = _validated_hs300_universe(pd.read_csv(cache_path, dtype={"code": str}))
+        except Exception:
+            cached = None
+    if cached is not None and _cache_valid(str(cache_path), ttl_days=ttl_days):
+        return cached
 
-    df = pd.DataFrame(list(stocks.values()))
-    if not df.empty:
-        df.to_csv(cache_file, index=False, encoding="utf-8")
-    return df
+    try:
+        fresh = _normalize_hs300_provider_frame(fetcher(symbol="000300"))
+        if fresh is None:
+            raise ValueError("沪深300成分数据未通过数量/来源校验")
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+        fresh.to_csv(tmp_path, index=False, encoding="utf-8")
+        os.replace(tmp_path, cache_path)
+        print(f"[data_fetcher] 股票池: {len(fresh)} 只 (沪深300，网络)")
+        return fresh
+    except Exception as exc:
+        if cached is not None:
+            print(f"[data_fetcher] 成分股刷新失败，使用有效缓存: {exc}")
+            return cached
+        print(f"[data_fetcher] 沪深300股票池不可用: {exc}")
+        return pd.DataFrame(columns=["code", "name", "index"])
 
 
 def fetch_stock_quick_snapshot(code: str) -> dict | None:

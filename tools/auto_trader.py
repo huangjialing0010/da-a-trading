@@ -1361,8 +1361,11 @@ def daily_update() -> str:
     try:
         from .screener import run_full_screening
         quick = today.weekday() != 4
-        run_full_screening(n=30, quick=quick)
+        screening_result = run_full_screening(n=30, quick=quick)
         lines.append(f"\n[候选池] 已刷新（{'快速' if quick else '全量'}模式）")
+        trend_scan_status = screening_result.get("trend_scan_status", {})
+        if trend_scan_status.get("status") == "frozen":
+            lines.append(f"[趋势候选] 刷新冻结：{trend_scan_status.get('reason', '股票池不可用')}")
 
         # 候选池摘要
         held = set(acc.get_holding_codes())
