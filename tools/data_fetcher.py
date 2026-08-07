@@ -22,6 +22,7 @@ _requests.Session.request = _patched_request
 BASE_DIR = Path(__file__).parent.parent
 CACHE_DIR = BASE_DIR / "data"
 KLINE_DIR = CACHE_DIR / "daily_kline"
+KLINE_ADJUST = "qfq"
 FIN_DIR = CACHE_DIR / "financials"
 MARKET_DIR = CACHE_DIR / "market"
 TRADE_CALENDAR_FILE = MARKET_DIR / "trade_calendar.csv"
@@ -144,20 +145,26 @@ def _to_symbol(code: str) -> str:
 
 def fetch_daily_kline(code: str, start_date: str = "20100101",
                       end_date: str | None = None, ttl_days: int = 1) -> pd.DataFrame:
-    """获取A股日K线，自动缓存。优先使用腾讯数据源，回退到东方财富"""
+    """获取前复权A股日K线，自动缓存。优先使用新浪数据源，回退到东方财富。"""
     if end_date is None:
         end_date = date.today().strftime("%Y%m%d")
 
-    cache_file = _cache_path(KLINE_DIR, f"{code}_{end_date}")
+    # 缓存键包含复权口径，避免旧版未复权缓存污染52周跌幅等指标。
+    cache_file = _cache_path(KLINE_DIR, f"{code}_{end_date}_{KLINE_ADJUST}")
     if _cache_valid(cache_file, ttl_days):
         return pd.read_csv(cache_file, index_col=0, parse_dates=True)
 
     symbol = _to_symbol(code)
     df = pd.DataFrame()
 
-    # 主数据源：stock_zh_a_daily（腾讯，不易被封）
+    # 主数据源：stock_zh_a_daily（新浪）
     try:
-        df = ak.stock_zh_a_daily(symbol=symbol, start_date=start_date, end_date=end_date)
+        df = ak.stock_zh_a_daily(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            adjust=KLINE_ADJUST,
+        )
         if df is not None and not df.empty:
             df = df.rename(columns={
                 "date": "日期", "open": "开盘", "high": "最高",
@@ -173,7 +180,8 @@ def fetch_daily_kline(code: str, start_date: str = "20100101",
     # 回退：stock_zh_a_hist（东方财富）
     try:
         df = ak.stock_zh_a_hist(symbol=code, period="daily",
-                                start_date=start_date, end_date=end_date, adjust="qfq")
+                                start_date=start_date, end_date=end_date,
+                                adjust=KLINE_ADJUST)
         if df is not None and not df.empty:
             df.columns = [c.lower() for c in df.columns]
             df["日期"] = pd.to_datetime(df["日期"])
