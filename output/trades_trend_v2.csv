@@ -1,1 +1,3 @@
 time,code,name,direction,price,quantity,amount,pnl,reason
+2026-08-10T09:30:00,600115,中国东航,BUY,3.68368,108400,399310.91,0.0,"趋势入场: 利润改善+288.0pp, ROE=10.9% [paper_order:10f78e64e44250098a10]"
+2026-08-10T09:30:00,600549,厦门钨业,BUY,58.788729999999994,5500,323338.01,0.0,"趋势入场: 利润改善+199.5pp, ROE=6.2% [paper_order:b93bcb16dc6ae897ce51]"

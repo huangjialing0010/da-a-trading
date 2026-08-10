@@ -1,7 +1,45 @@
 {
-  "cash": 2000000,
-  "positions": {},
-  "trades": [],
+  "cash": 1277170.41076825,
+  "positions": {
+    "600115": {
+      "code": "600115",
+      "name": "中国东航",
+      "quantity": 108400,
+      "avg_cost": 3.6846009200000003,
+      "current_price": 3.68368,
+      "strategy": "trend_reversal"
+    },
+    "600549": {
+      "code": "600549",
+      "name": "厦门钨业",
+      "quantity": 5500,
+      "avg_cost": 58.803427182499995,
+      "current_price": 58.788729999999994,
+      "strategy": "trend_reversal"
+    }
+  },
+  "trades": [
+    {
+      "time": "2026-08-10T09:30:00",
+      "code": "600115",
+      "name": "中国东航",
+      "direction": "BUY",
+      "price": 3.68368,
+      "quantity": 108400,
+      "reason": "趋势入场: 利润改善+288.0pp, ROE=10.9% [paper_order:10f78e64e44250098a10]",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-08-10T09:30:00",
+      "code": "600549",
+      "name": "厦门钨业",
+      "direction": "BUY",
+      "price": 58.788729999999994,
+      "quantity": 5500,
+      "reason": "趋势入场: 利润改善+199.5pp, ROE=6.2% [paper_order:b93bcb16dc6ae897ce51]",
+      "pnl": 0.0
+    }
+  ],
   "equity_snapshots": [
     {
       "date": "2026-08-07",
@@ -9,6 +47,13 @@
       "cash": 2000000,
       "market_value": 0,
       "position_count": 0
+    },
+    {
+      "date": "2026-08-10",
+      "total_value": 1999819.34,
+      "cash": 1277170.41,
+      "market_value": 722648.93,
+      "position_count": 2
     }
   ],
   "created_at": "2026-08-07T16:35:53.783239"

@@ -1,2 +1,3 @@
 date,portfolio_value,benchmark_price,portfolio_return,benchmark_return,alpha,positions
-2026-08-07,2000000,4694.44,0.0,0.0,0.0,0
+2026-08-07,2000000.0,4694.44,0.0,0.0,0.0,0
+2026-08-10,1999819.34,4702.02,-0.0001,0.0016,-0.0017,2
