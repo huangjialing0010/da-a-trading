@@ -357,7 +357,8 @@ def _fill_order(
 
 def execute_due_orders(
         book: PaperOrderBook, account: VirtualAccount, as_of,
-        kline_getter: Callable[[str], pd.DataFrame]) -> list[dict]:
+        kline_getter: Callable[[str], pd.DataFrame],
+        buy_guard: Callable[[PaperOrder], str] | None = None) -> list[dict]:
     """执行截至 as_of 已到期订单。卖单优先，任何异常均失败关闭。"""
     as_of_text = _date_text(as_of)
     results = []
@@ -381,6 +382,16 @@ def execute_due_orders(
             book.save()
             results.append({"order_id": order.order_id, "status": "FILLED", "reconciled": True})
             continue
+
+        if order.direction == "BUY" and buy_guard is not None:
+            try:
+                guard_reason = str(buy_guard(order) or "").strip()
+            except Exception as exc:
+                guard_reason = f"买单事件闸门异常: {exc}"
+            if guard_reason:
+                results.append(_mark_canceled(order, guard_reason))
+                book.save()
+                continue
 
         try:
             frame = _normalized_frame(kline_getter(order.code))

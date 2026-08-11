@@ -146,6 +146,22 @@ class PaperOrderBookTest(unittest.TestCase):
         self.assertGreater(saved.fees, 0)
         self.assertAlmostEqual(saved.gap_pct, 0.10)
 
+    def test_due_buy_is_canceled_when_new_event_guard_blocks_it(self):
+        order, _ = self.create_buy(strategy="deep_value")
+
+        results = execute_due_orders(
+            self.book, self.account, "2026-08-10",
+            lambda _code: self.fail("事件闸门应在行情读取前取消买单"),
+            buy_guard=lambda item: (
+                "重大业绩事件阻塞：H1由盈转亏" if item.code == "000001" else ""
+            ),
+        )
+
+        self.assertEqual(results[0]["status"], "CANCELED")
+        self.assertIn("重大业绩事件阻塞", results[0]["reason"])
+        self.assertEqual(self.book.get(order.order_id).status, "CANCELED")
+        self.assertEqual(self.account.state.trades, [])
+
     def test_one_price_limit_up_cancels_buy(self):
         order, _ = self.create_buy()
         frame = kline([

@@ -3,6 +3,7 @@ import textwrap
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.account import VirtualAccount
 from tools.deep_entry import (
@@ -187,6 +188,24 @@ class DeepRecommendationTest(unittest.TestCase):
             account_config=config, erp_cap=0.80, industry_lookup=lookup,
         )
         self.assertIn("行业", industry_block)
+
+    def test_blocking_earnings_event_rejects_new_initial_position(self):
+        recommendation = load_deep_recommendation(
+            self.write_research(), "2026-08-07", "2026-08-10"
+        )
+        config = {"single_stock_max_pct": 0.20, "max_total_position_pct": 0.80}
+
+        with patch(
+            "tools.deep_entry.blocking_earnings_reason",
+            return_value="重大业绩事件阻塞：H1由盈转亏",
+        ):
+            reason = deep_initial_risk_reason(
+                recommendation, 21.0, account=self.account, order_book=self.book,
+                account_config=config, erp_cap=0.80,
+                industry_lookup=lambda _code: {"level2_name": "化学原料"},
+            )
+
+        self.assertIn("重大业绩事件阻塞", reason)
 
     def test_report_separates_created_existing_and_blocked(self):
         self.write_research()

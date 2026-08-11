@@ -10,6 +10,7 @@ from typing import Callable, Iterable
 import yaml
 
 from .account import VirtualAccount, _load_costs_config
+from .earnings_alerts import EarningsAlertError, blocking_earnings_reason
 from .paper_orders import PaperOrderBook
 
 
@@ -279,6 +280,13 @@ def deep_initial_risk_reason(
         account_config: dict, erp_cap: float,
         industry_lookup: Callable[[str], dict | None]) -> str:
     """按持仓、活动买单和本次建议计算预计风险占用。"""
+    try:
+        alert_reason = blocking_earnings_reason(recommendation.code)
+    except EarningsAlertError as exc:
+        return f"重大业绩警示数据异常，禁止新开仓: {exc}"
+    if alert_reason:
+        return alert_reason
+
     total_value = float(account.state.total_value)
     if total_value <= 0:
         return "账户总资产无效"

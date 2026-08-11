@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "alerts": [
+    {
+      "code": "601127",
+      "name": "赛力斯",
+      "published_at": "2026-07-13",
+      "alert_type": "半年度业绩预亏",
+      "severity": "BLOCK",
+      "reason": "2026H1预计归母亏损15至18亿元、扣非亏损22至25亿元，已推翻一季报盈利信号",
+      "source_url": "https://file.finance.sina.com.cn/211.154.219.97%3A9494/MRGG/CNSESH_STOCK/2026/2026-7/2026-07-13/12441841.PDF",
+      "review_condition": "正式半年报完成损失拆分，且核心业务连续两个季度恢复扣非盈利并改善现金流",
+      "active": true
+    }
+  ]
+}

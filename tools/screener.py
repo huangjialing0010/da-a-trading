@@ -19,6 +19,7 @@ from .data_fetcher import (
     fetch_stock_universe, fetch_stock_quick_snapshot, _parse_pct,
 )
 from .industry_analyzer import classify_stock, get_sector_score, is_enabled, get_industry_distribution
+from .earnings_alerts import EarningsAlertError, active_earnings_alerts
 
 BASE_DIR = Path(__file__).parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
@@ -71,6 +72,13 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
     dv = config["deep_value"]
     if max_check is None:
         max_check = dv.get("universe_top_n", 70)
+    try:
+        earnings_alerts = {
+            item["code"]: item for item in active_earnings_alerts()
+        }
+    except EarningsAlertError as exc:
+        print(f"[screener] 重大业绩警示不可用，深价候选失败关闭: {exc}")
+        return []
     universe = fetch_stock_universe()
 
     if universe.empty:
@@ -85,6 +93,13 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
         code = str(row["code"]).zfill(6)
         name = str(row["name"])
         if "ST" in name:
+            continue
+        alert = earnings_alerts.get(code)
+        if alert and alert["severity"] == "BLOCK":
+            print(
+                f"[screener] 重大业绩事件阻塞 {code} {name}: "
+                f"{alert['published_at']} {alert['reason']}"
+            )
             continue
         tasks.append((code, name, str(row.get("index", ""))))
 
@@ -110,6 +125,11 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
         flags = list(r["flags"])
         metrics = dict(r["metrics"])
         metrics["index"] = r.get("index", "")
+        alert = earnings_alerts.get(code)
+        if alert and alert["severity"] == "WARN":
+            flags.append(
+                f"[重大业绩警示]{alert['published_at']} {alert['reason']}"
+            )
 
         industry_state = classify_stock(code, name) if is_enabled() else "neutral"
         if industry_state == "decline":

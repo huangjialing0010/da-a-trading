@@ -33,6 +33,11 @@ from .deep_entry import (
 from .signal_engine import check_monitor
 from .industry_analyzer import get_stock_industry
 from .commodity_fetcher import check_commodity_cycle
+from .earnings_alerts import (
+    EarningsAlertError,
+    blocking_earnings_reason,
+    format_earnings_alert_report,
+)
 
 BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
@@ -1350,8 +1355,15 @@ def daily_update() -> str:
     else:
         acc._save()  # 全部持仓新鲜后才持久化价格
 
+        def _deep_buy_event_guard(order):
+            try:
+                return blocking_earnings_reason(order.code)
+            except EarningsAlertError as exc:
+                return f"重大业绩警示数据异常，取消深价买单: {exc}"
+
         deep_order_outcomes = execute_due_orders(
             deep_order_book, acc, expected_date, _get_kline,
+            buy_guard=_deep_buy_event_guard,
         )
         # 业务状态以真实成交为准，挂单本身不推进批次。
         for outcome in deep_order_outcomes:
@@ -1807,6 +1819,13 @@ def daily_update() -> str:
             pass
     except Exception as e:
         lines.append(f"\n[候选池] 刷新失败: {e}")
+
+    try:
+        alert_report = format_earnings_alert_report()
+        if alert_report:
+            lines.append(alert_report)
+    except EarningsAlertError as exc:
+        lines.append(f"\n[重大业绩事件警示] 数据异常，深价新买将失败关闭: {exc}")
 
     # 8.1 普通深价首仓：仅消费已入库的结构化 BUY 建议。
     if deep_frozen:

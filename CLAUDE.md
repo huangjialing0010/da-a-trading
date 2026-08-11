@@ -31,6 +31,7 @@ A股虚拟盘交易系统。不连接真实账户，所有交易在本地模拟�
 - `output/account*.json`、`trades*.csv`、`performance*.csv`：双仓账户、成交和表现。
 - `output/paper_orders*.json`：T+1 订单审计账本；历史订单不得删除。
 - `output/candidates*.csv`、`trend_candidates.csv`、`candidate_tracker.csv`：候选与前瞻追踪。
+- `data/market/earnings_alerts.json`：经核实的重大业绩事件人工覆盖层；`BLOCK` 同时阻断深价候选、新首仓和待执行深价买单，必须显式复核关闭，不影响趋势 V2 或卖出。
 - `output/research/`：书面研究；`output/reports/`：日报、周报、月报和索引。
 - `tools/`：账户、订单、数据、筛选、信号、交易、验证和报告模块。
 - `tests/`：标准库 `unittest`；`.github/workflows/daily.yml`：工作日自动日更。
