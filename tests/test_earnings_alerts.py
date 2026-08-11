@@ -12,6 +12,7 @@ from tools.earnings_alerts import (
     format_earnings_alert_report,
     load_earnings_alerts,
 )
+from tools import screener
 from tools.screener import screen_deep_value
 
 
@@ -86,6 +87,25 @@ class EarningsAlertTest(unittest.TestCase):
             candidates = screen_deep_value(config, n=30, quick_mode=True)
 
         self.assertEqual([item.code for item in candidates], ["600426"])
+
+    def test_cached_candidate_view_excludes_blocked_code_without_rewriting_csv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "candidates.csv"
+            pd.DataFrame([
+                {"code": "601127", "name": "赛力斯", "strategy": "deep_value", "score": 95},
+                {"code": "600426", "name": "华鲁恒升", "strategy": "deep_value", "score": 80},
+            ]).to_csv(path, index=False, encoding="utf-8")
+
+            with (
+                patch.object(screener, "OUTPUT_DIR", Path(tmp)),
+                patch("tools.screener.blocking_earnings_codes", return_value={"601127"}),
+            ):
+                candidates = screener.load_candidates()
+
+            raw = pd.read_csv(path, dtype={"code": str})
+
+        self.assertEqual([item.code for item in candidates["deep_value"]], ["600426"])
+        self.assertEqual(set(raw["code"]), {"601127", "600426"})
 
 
 if __name__ == "__main__":

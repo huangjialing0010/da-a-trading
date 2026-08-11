@@ -19,7 +19,11 @@ from .data_fetcher import (
     fetch_stock_universe, fetch_stock_quick_snapshot, _parse_pct,
 )
 from .industry_analyzer import classify_stock, get_sector_score, is_enabled, get_industry_distribution
-from .earnings_alerts import EarningsAlertError, active_earnings_alerts
+from .earnings_alerts import (
+    EarningsAlertError,
+    active_earnings_alerts,
+    blocking_earnings_codes,
+)
 
 BASE_DIR = Path(__file__).parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
@@ -692,18 +696,30 @@ def _save_candidates(results: dict, filename: str = "candidates.csv"):
 
 
 def load_candidates() -> dict:
-    """从缓存加载候选池"""
+    """从缓存加载当前有效候选池；原始 CSV 保留事件发生前的审计快照。"""
     path = OUTPUT_DIR / "candidates.csv"
     if not path.exists():
         return {"deep_value": [], "panic": [], "event_arb": []}
 
     df = pd.read_csv(path, dtype={"code": str})
+    try:
+        blocked_codes = blocking_earnings_codes()
+    except EarningsAlertError:
+        blocked_codes = {
+            str(value).zfill(6) for value in df.loc[
+                df["strategy"] == "deep_value", "code"
+            ].tolist()
+        }
     results = {"deep_value": [], "panic": [], "event_arb": []}
     for _, row in df.iterrows():
+        code = str(row["code"]).zfill(6)
+        strategy = str(row["strategy"])
+        if strategy == "deep_value" and code in blocked_codes:
+            continue
         c = Candidate(
-            code=str(row["code"]).zfill(6),
+            code=code,
             name=str(row["name"]),
-            strategy=str(row["strategy"]),
+            strategy=strategy,
             score=float(row["score"]),
             reason=str(row.get("reason", "")),
             checked_at=str(row.get("checked_at", "")),

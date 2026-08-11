@@ -36,6 +36,7 @@ from .commodity_fetcher import check_commodity_cycle
 from .earnings_alerts import (
     EarningsAlertError,
     blocking_earnings_reason,
+    blocking_earnings_codes,
     format_earnings_alert_report,
 )
 
@@ -53,6 +54,16 @@ _kline_cache: dict[str, "pd.DataFrame"] = {}
 
 # 基准价内存缓存：当次运行内只拉一次网络
 _bm_price_cache: float | None = None
+
+
+def _read_effective_deep_candidates():
+    """读取深价 CSV 并叠加重大业绩事件；原始文件只作为审计快照。"""
+    import pandas as pd
+
+    frame = pd.read_csv(OUTPUT_DIR / "candidates.csv", dtype={"code": str})
+    blocked = blocking_earnings_codes()
+    codes = frame["code"].map(lambda value: str(value).zfill(6))
+    return frame.loc[~codes.isin(blocked)].copy()
 
 
 def _get_benchmark_price(today: date) -> float:
@@ -1796,7 +1807,7 @@ def daily_update() -> str:
         held = set(acc.get_holding_codes())
         try:
             import pandas as pd
-            dv_df = pd.read_csv(OUTPUT_DIR / "candidates.csv", dtype={"code": str})
+            dv_df = _read_effective_deep_candidates()
             deep_candidate_count = len(dv_df)
             deep_candidate_rows = dv_df.to_dict("records")
             dv_new = [f"{str(r['code']).zfill(6)} {r['name']}" for _, r in dv_df.iterrows()
@@ -1923,7 +1934,10 @@ def daily_update() -> str:
         ]:
             if csv_file.exists():
                 import pandas as pd
-                df = pd.read_csv(csv_file)
+                df = (
+                    _read_effective_deep_candidates()
+                    if strat_label == "深价" else pd.read_csv(csv_file)
+                )
                 for _, r in df.iterrows():
                     c = str(int(r["code"])).zfill(6)
                     if c not in code_to_name:
@@ -2026,7 +2040,10 @@ def daily_update() -> str:
                                  (OUTPUT_DIR / "trend_candidates.csv", "趋势候选")]:
             if csv_file.exists():
                 import pandas as pd
-                df = pd.read_csv(csv_file)
+                df = (
+                    _read_effective_deep_candidates()
+                    if label == "深价候选" else pd.read_csv(csv_file)
+                )
                 for _, row in df.iterrows():
                     code = str(row["code"]).zfill(6)
                     if code not in existing_research:

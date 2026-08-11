@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from .data_fetcher import fetch_daily_kline
+from .earnings_alerts import EarningsAlertError, blocking_earnings_codes
 
 BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
@@ -64,8 +65,17 @@ def update_candidate_tracker() -> str:
     dv_file = OUTPUT_DIR / "candidates.csv"
     if dv_file.exists():
         dv = pd.read_csv(dv_file)
+        try:
+            blocked_codes = blocking_earnings_codes()
+        except EarningsAlertError:
+            blocked_codes = {
+                _normalize_code(value)
+                for value in (dv["code"].tolist() if "code" in dv.columns else [])
+            }
         for _, r in dv.iterrows():
             code = str(int(r["code"])).zfill(6)
+            if code in blocked_codes:
+                continue
             key = f"{code}|deep_value"
             active_pool[key] = {"code": code, "name": str(r["name"]), "strategy": "deep_value"}
 

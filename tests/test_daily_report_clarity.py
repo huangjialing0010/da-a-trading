@@ -13,6 +13,7 @@ from tools.auto_trader import (
     _holding_period_text,
     _morning_brief_text,
     _pending_research_summary,
+    _read_effective_deep_candidates,
     _research_observation_intro,
     _trend_order_plan_text,
 )
@@ -125,6 +126,21 @@ class DailyReportClarityTest(unittest.TestCase):
         self.assertIn("已生成研究队列", text)
         self.assertIn("独立 AI/人工任务", text)
         self.assertNotIn("自动启动", text)
+
+    def test_daily_candidate_view_excludes_blocking_earnings_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pd.DataFrame([
+                {"code": "601127", "name": "赛力斯"},
+                {"code": "600426", "name": "华鲁恒升"},
+            ]).to_csv(Path(tmp) / "candidates.csv", index=False, encoding="utf-8")
+
+            with (
+                patch("tools.auto_trader.OUTPUT_DIR", Path(tmp)),
+                patch("tools.auto_trader.blocking_earnings_codes", return_value={"601127"}),
+            ):
+                frame = _read_effective_deep_candidates()
+
+        self.assertEqual(frame["code"].tolist(), ["600426"])
 
 
 if __name__ == "__main__":

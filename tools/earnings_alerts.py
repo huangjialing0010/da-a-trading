@@ -76,6 +76,13 @@ def active_earnings_alerts(path: str | Path = ALERTS_PATH) -> list[dict]:
     return [item for item in load_earnings_alerts(path) if item["active"]]
 
 
+def blocking_earnings_codes(path: str | Path = ALERTS_PATH) -> set[str]:
+    return {
+        item["code"] for item in active_earnings_alerts(path)
+        if item["severity"] == "BLOCK"
+    }
+
+
 def get_blocking_earnings_alert(
         code: str, path: str | Path = ALERTS_PATH) -> dict | None:
     normalized_code = _code_text(code)
