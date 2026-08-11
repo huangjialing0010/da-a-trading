@@ -1,4 +1,5 @@
 import unittest
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -61,11 +62,29 @@ class TrendHoldingsReportTest(unittest.TestCase):
         getter.assert_any_call("000001")
         getter.assert_any_call("000002")
 
+    def test_row_includes_unrealized_pnl_amount_and_holding_period(self):
+        getter = Mock(return_value=kline(110))
+        holdings = [position("000001", "甲", 110)]
+        trades = [SimpleNamespace(
+            time="2026-08-05T09:30:00", code="000001", direction="BUY", quantity=100,
+        )]
+
+        rows = _build_trend_holding_rows(
+            holdings, CFG, getter, trades=trades, as_of=date(2026, 8, 10),
+        )
+
+        self.assertEqual(rows[0][3], "5天(08-05)")
+        self.assertEqual(rows[0][7], "+1,000")
+        self.assertEqual(rows[0][8], "+10.00%")
+        self.assertEqual(rows[0][-1], "趋势V2")
+
     def test_stale_holding_freezes_before_snapshot_and_keeps_pretrade_row(self):
         held = position("000001", "过期持仓", 110)
         account = Mock()
         account.get_holdings.return_value = [held]
-        account.state = SimpleNamespace(total_value=11_000, cash=0, position_count=1)
+        account.state = SimpleNamespace(
+            total_value=11_000, cash=0, position_count=1, trades=[],
+        )
         stale_kline = pd.DataFrame(
             {"收盘": [110.0]}, index=pd.to_datetime(["2026-08-06"])
         )

@@ -297,6 +297,17 @@ def _position_opened_at(trades: list, code: str) -> tuple[date | None, str | Non
     return opened_at, None
 
 
+def _holding_period_text(trades: list, code: str, as_of: date) -> str:
+    """显示当前一轮持仓的自然日和首次建仓日；无法重建时不猜测。"""
+    opened_at, error = _position_opened_at(trades, code)
+    if error or opened_at is None:
+        return "未知"
+    held_days = (as_of - opened_at).days
+    if held_days < 0:
+        return "未知"
+    return f"{held_days}天({opened_at.strftime('%m-%d')})"
+
+
 def _evaluate_holding_freshness(
         holding_codes: list[str], data_dates: dict[str, str], reference_date: str) -> dict:
     """判断任一持仓是否缺行情或落后于指定交易日。"""
@@ -567,6 +578,93 @@ def _pending_research_summary(count: int) -> str:
     )
 
 
+def _morning_brief_text(
+        report_date: str,
+        deep_data_date: str,
+        deep_frozen: bool,
+        deep_account: VirtualAccount,
+        deep_order_book: PaperOrderBook,
+        trend_account: VirtualAccount | None,
+        trend_order_book: PaperOrderBook | None,
+        pending_research: list[tuple[str, str, str]] | None,
+        erp_allowed: bool,
+        erp_message: str,
+) -> str:
+    """次日开盘前的一屏摘要；正文继续保留完整研究和订单审计。"""
+    def account_text(label: str, account: VirtualAccount | None) -> str:
+        if account is None:
+            return f"{label}状态不可用"
+        state = account.state
+        return (
+            f"{label}总资产{state.total_value:,.0f}元、现金{state.cash:,.0f}元、"
+            f"持仓浮盈亏{state.total_pnl:+,.0f}元"
+        )
+
+    def order_text(book: PaperOrderBook | None) -> str:
+        if book is None:
+            return "订单状态不可用"
+        active = list(book.active_orders())
+        if not active:
+            return "无待执行订单"
+        parts = []
+        for order in active:
+            estimate = float(order.quantity) * float(order.reference_close)
+            parts.append(
+                f"{order.planned_trade_date} {order.direction} {order.code} {order.name} "
+                f"{order.quantity}股（约{estimate:,.0f}元，{order.status}）"
+            )
+        return "；".join(parts)
+
+    if deep_frozen:
+        deep_action = "数据熔断，深价仓不执行买卖"
+    else:
+        deep_action = order_text(deep_order_book)
+        if not erp_allowed:
+            deep_action += f"；不买入/加仓（{erp_message}）"
+
+    lines = [
+        "\n═══ 晨间执行卡（次日开盘前） ═══",
+        f"  数据：报告交易日{report_date} | 深价行情截至{deep_data_date}",
+        f"  账户：{account_text('深价仓', deep_account)}",
+        f"  账户：{account_text('趋势 V2（仅虚拟盘）', trend_account)}",
+        f"  深价动作：{deep_action}",
+        f"  趋势 V2 动作（仅虚拟盘）：{order_text(trend_order_book)}",
+    ]
+
+    if pending_research is None:
+        lines.append("  待分析：研究队列读取失败，查看正文告警")
+        return "\n".join(lines)
+
+    combined: dict[str, dict] = {}
+    for code, name, label in pending_research:
+        normalized = str(code).zfill(6)
+        item = combined.setdefault(normalized, {"name": str(name), "labels": set()})
+        item["labels"].add("深价" if "深价" in str(label) else "趋势")
+
+    def queue_text(items: list[tuple[str, dict]]) -> str:
+        shown = items[:8]
+        text = "、".join(
+            f"{code} {item['name']}[{'/'.join(sorted(item['labels']))}]"
+            for code, item in shown
+        )
+        if len(items) > len(shown):
+            text += f"，另{len(items) - len(shown)}只见正文"
+        return text
+
+    deep_items = [(code, item) for code, item in combined.items() if "深价" in item["labels"]]
+    trend_items = [
+        (code, item) for code, item in combined.items()
+        if "趋势" in item["labels"] and "深价" not in item["labels"]
+    ]
+    if deep_items:
+        lines.append(f"  待分析（深价优先）：{queue_text(deep_items)}")
+    if trend_items:
+        lines.append(f"  待分析（趋势观察，不影响 V2）：{queue_text(trend_items)}")
+    if not combined:
+        lines.append("  待分析：无缺失研究或结论不明的候选")
+    return "\n".join(lines)
+
+
 def _legacy_trend_snapshot_text() -> str:
     """旧趋势账户只读快照，不参与 V2 组合净值。"""
     if not os.path.exists(LEGACY_TREND_ACCOUNT_FILE):
@@ -582,7 +680,9 @@ def _legacy_trend_snapshot_text() -> str:
         return f"\n  旧趋势仓快照：读取失败 {exc}"
 
 
-def _trend_holding_row(pos: Position, cfg: dict, kline: "pd.DataFrame") -> list[str]:
+def _trend_holding_row(
+        pos: Position, cfg: dict, kline: "pd.DataFrame", holding_period: str = "未知",
+) -> list[str]:
     """用最终持仓状态和已缓存K线生成一行趋势持仓报告。"""
     price = pos.current_price
     pnl = (price / pos.avg_cost - 1) if pos.avg_cost > 0 else 0
@@ -599,22 +699,33 @@ def _trend_holding_row(pos: Position, cfg: dict, kline: "pd.DataFrame") -> list[
         trigger_price = pos.avg_cost * (1 + trail_trigger_pct)
         exit_info = f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
     return [
-        pos.code, pos.name, f"{pos.quantity:,}", f"{pos.avg_cost:.2f}",
-        f"{price:.2f}", f"{mkt_val:,.0f}", f"{pnl:+.1%}", exit_info,
-        pos.strategy or "trend_reversal",
+        pos.code, pos.name, f"{pos.quantity:,}", holding_period, f"{pos.avg_cost:.2f}",
+        f"{price:.2f}", f"{mkt_val:,.0f}", f"{pos.pnl:+,.0f}", f"{pnl:+.2%}", exit_info,
+        "趋势V2",
     ]
 
 
-def _build_trend_holding_rows(holdings: list[Position], cfg: dict, kline_getter) -> list[list[str]]:
+def _build_trend_holding_rows(
+        holdings: list[Position], cfg: dict, kline_getter,
+        trades: list | None = None, as_of: date | None = None,
+) -> list[list[str]]:
     """从同一时点的最终持仓生成趋势表格；K线由调用方缓存提供。"""
+    trades = trades or []
+    as_of = as_of or date.today()
     return [
-        _trend_holding_row(pos, cfg, kline_getter(pos.code))
+        _trend_holding_row(
+            pos, cfg, kline_getter(pos.code),
+            _holding_period_text(trades, pos.code, as_of),
+        )
         for pos in holdings
     ]
 
 
-def _build_deep_holding_rows(acc: VirtualAccount, cfg: dict) -> tuple[list[list[str]], dict[str, str]]:
+def _build_deep_holding_rows(
+        acc: VirtualAccount, cfg: dict, as_of: date | None = None,
+) -> tuple[list[list[str]], dict[str, str]]:
     """刷新深价持仓收盘价并生成与最终账户一致的报告行。"""
+    as_of = as_of or date.today()
     rows = []
     data_dates = {}
     for pos in list(acc.get_holdings()):
@@ -635,9 +746,11 @@ def _build_deep_holding_rows(acc: VirtualAccount, cfg: dict) -> tuple[list[list[
             trigger_price = pos.avg_cost * (1 + cfg["take_profit"]["trail_trigger"])
             exit_info = f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
         rows.append([
-            pos.code, pos.name, f"{pos.quantity:,}", f"{pos.avg_cost:.2f}",
-            f"{new_price:.2f}", f"{new_price * pos.quantity:,.0f}", f"{pnl:+.1%}",
-            exit_info, pos.strategy or "deep_value",
+            pos.code, pos.name, f"{pos.quantity:,}",
+            _holding_period_text(acc.state.trades, pos.code, as_of), f"{pos.avg_cost:.2f}",
+            f"{new_price:.2f}", f"{new_price * pos.quantity:,.0f}",
+            f"{(new_price - pos.avg_cost) * pos.quantity:+,.0f}", f"{pnl:+.2%}",
+            exit_info, "深价仓(恐慌)" if pos.strategy == "panic" else "深价仓",
         ])
     return rows, data_dates
 
@@ -734,7 +847,9 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
         holding_data_dates[pos.code] = str(kline.index[-1].date())
         new_price = float(kline.iloc[-1]["收盘"])
         acc.update_price(pos.code, new_price)
-        tr_rows.append(_trend_holding_row(pos, cfg, kline))
+        tr_rows.append(_trend_holding_row(
+            pos, cfg, kline, _holding_period_text(acc.state.trades, pos.code, signal_day),
+        ))
 
     # ── 1.5 数据熔断：趋势仓独立核对全部持仓是否覆盖期望交易日 ──
     freshness = _market_date_gate(holding_codes, holding_data_dates, calendar_info)
@@ -749,7 +864,8 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
         lines.append("  今日跳过趋势仓自动交易（买入和卖出均不执行），不记录净值/表现")
         if tr_rows:
             lines.append(_format_table(
-                ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "止盈/止损", "策略"],
+                ["代码", "名称", "持仓", "持有时间", "成本", "现价", "市值",
+                 "浮盈亏", "盈亏率", "止盈/止损", "仓别"],
                 tr_rows))
         lines.append(f"  总资产(未更新): {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
         return "\n".join(lines)
@@ -949,7 +1065,8 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
 
     # ── 4. 盘后持仓表 + 净值 ──
     tr_rows = _build_trend_holding_rows(
-        list(acc.get_holdings()), cfg, lambda code: _get_kline(code, ttl_days=0)
+        list(acc.get_holdings()), cfg, lambda code: _get_kline(code, ttl_days=0),
+        trades=acc.state.trades, as_of=signal_day,
     )
     acc.record_snapshot(expected_date)
 
@@ -974,7 +1091,8 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
 
     if tr_rows:
         lines.append(_format_table(
-            ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "止盈/止损", "策略"],
+            ["代码", "名称", "持仓", "持有时间", "成本", "现价", "市值",
+             "浮盈亏", "盈亏率", "止盈/止损", "仓别"],
             tr_rows))
     lines.append(
         "\n  交易漏斗："
@@ -1211,7 +1329,7 @@ def daily_update() -> str:
 
     # 1. 更新持仓价格（收集数据用于表格输出）
     cfg = _load_config()
-    dv_rows, deep_holding_dates = _build_deep_holding_rows(acc, cfg)
+    dv_rows, deep_holding_dates = _build_deep_holding_rows(acc, cfg, signal_day)
     for pos in acc.get_holdings():
         if pos.code not in deep_holding_dates:
             lines.append(f"[{pos.name}] 无法获取K线")
@@ -1275,7 +1393,7 @@ def daily_update() -> str:
             and deep_order_book.get(item["order_id"]).direction == "SELL"
         )
         # 成交可能改变持仓，日报必须重建最终持仓行。
-        dv_rows, deep_holding_dates = _build_deep_holding_rows(acc, cfg)
+        dv_rows, deep_holding_dates = _build_deep_holding_rows(acc, cfg, signal_day)
 
     # 2. 止损/止盈检查（考虑分批计划）
     # 先获取 check_monitor 的非止损信号（基本面/时间止损/止盈保留）
@@ -1602,7 +1720,8 @@ def daily_update() -> str:
     lines.append(f"\n═══ 深价主仓 ═══")
     if dv_rows:
         lines.append(_format_table(
-            ["代码", "名称", "持仓", "成本", "现价", "市值", "盈亏", "止盈/止损", "策略"],
+            ["代码", "名称", "持仓", "持有时间", "成本", "现价", "市值",
+             "浮盈亏", "盈亏率", "止盈/止损", "仓别"],
             dv_rows))
     lines.append(f"\n  总资产: {acc.state.total_value:,.0f} | 现金: {acc.state.cash:,.0f} | 持仓: {acc.state.position_count}只")
     if performance_allowed:
@@ -1773,6 +1892,7 @@ def daily_update() -> str:
         lines.append(f"\n[候选追踪] 失败: {e}")
 
     # 8.6 研究结论速览
+    morning_research_queue = None
     try:
         from .candidate_tracker import get_conclusion_map
 
@@ -1804,6 +1924,14 @@ def daily_update() -> str:
             watch_codes = [c for c in all_codes if cmap.get(c, "?") == "观望"]
             elim_codes  = [c for c in all_codes if cmap.get(c, "?") == "淘汰"]
             unknown     = [c for c in all_codes if cmap.get(c, "?") in ("?", "未分析")]
+            morning_research_queue = []
+            for c in unknown:
+                labels = code_strategies.get(c, set())
+                for label in ("深价", "趋势"):
+                    if label in labels:
+                        morning_research_queue.append(
+                            (c, code_to_name.get(c, c), f"{label}候选")
+                        )
 
             lines.extend(_research_observation_intro())
             lines.append(f"  候选池共 {len(all_codes)} 只，已分析 {len(all_codes) - len(unknown)} 只")
@@ -1838,6 +1966,8 @@ def daily_update() -> str:
                 for c in unknown:
                     n = code_to_name.get(c, c)
                     lines.append(f"    {c} {_pad_str(n, 10)} [{_strategy_tag(c)}]")
+        else:
+            morning_research_queue = []
     except Exception as e:
         lines.append(f"\n[研究结论速览] 失败: {e}")
 
@@ -1848,8 +1978,10 @@ def daily_update() -> str:
         lines.append(f"  {m}")
 
     # 9. 趋势策略虚拟仓（纸上测试，非实盘！！！）
+    trend_update_ok = False
     try:
         trend_report = trend_daily_update(calendar_info)
+        trend_update_ok = True
         lines.append(f"\n═══ 趋势虚拟仓（纸上测试） ═══")
         lines.append(f"{trend_report}")
         if today.weekday() == 4:
@@ -1864,6 +1996,7 @@ def daily_update() -> str:
         lines.append(f"\n[趋势虚拟仓] 失败: {e}")
 
     # 9.5 待深度分析检查：候选池中哪些还没有研究笔记
+    pending = None
     try:
         research_dir = OUTPUT_DIR / "research"
         research_dir.mkdir(parents=True, exist_ok=True)
@@ -1887,6 +2020,25 @@ def daily_update() -> str:
             lines.append(_pending_research_summary(len(pending)))
     except Exception as e:
         lines.append(f"\n[待分析检查] 失败: {e}")
+
+    # 9.6 晨间执行卡在全部账户、订单和研究队列完成后生成，再置顶到交易日期之后。
+    try:
+        trend_acc = (
+            VirtualAccount(TREND_ACCOUNT_FILE, costs_enabled=True)
+            if trend_update_ok and os.path.exists(TREND_ACCOUNT_FILE) else None
+        )
+        trend_book = (
+            PaperOrderBook(TREND_ORDER_FILE, "trend_v2") if trend_update_ok else None
+        )
+        morning_brief = _morning_brief_text(
+            expected_date or today.isoformat(), data_date, deep_frozen,
+            acc, deep_order_book, trend_acc, trend_book,
+            morning_research_queue if morning_research_queue is not None else pending,
+            erp_cap_ok, erp_cap_msg,
+        )
+        lines.insert(1, morning_brief)
+    except Exception as e:
+        lines.insert(1, f"\n═══ 晨间执行卡（次日开盘前） ═══\n  生成失败: {e}")
 
     report = "\n".join(lines)
 
