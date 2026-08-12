@@ -10,6 +10,7 @@ from .earnings_alerts import EarningsAlertError, blocking_earnings_codes
 BASE_DIR = Path(__file__).parent.parent
 OUTPUT_DIR = BASE_DIR / "output"
 TRACKER_FILE = OUTPUT_DIR / "candidate_tracker.csv"
+RECENT_EXIT_DISPLAY_LIMIT = 10
 
 COLUMNS = ["entry_date", "code", "name", "strategy", "entry_price",
            "current_price", "pnl_pct", "max_pnl_pct", "max_dd_pct",
@@ -316,8 +317,7 @@ def _build_summary(tracker: pd.DataFrame, new_entries: int, closed_count: int) -
             pnl = float(r["pnl_pct"])
             conclusion = _get_analysis_conclusion(code)
 
-            flag = "+" if pnl > 0 else ("-" if pnl < 0 else " ")
-            lines.append(f"  {code:<8} {name:<10} {flag}{pnl:>+.1%}   {conclusion:<12} {days:>5}天")
+            lines.append(f"  {code:<8} {name:<10} {pnl:>+.1%}   {conclusion:<12} {days:>5}天")
 
         # 汇总行
         pnl_vals = sub["pnl_pct"].dropna().astype(float)
@@ -341,10 +341,11 @@ def _build_summary(tracker: pd.DataFrame, new_entries: int, closed_count: int) -
             recent_exits.append(r)
 
     if recent_exits:
+        recent_exits.sort(key=lambda row: str(row["exit_date"]).strip()[:10], reverse=True)
         lines.append(f"\n  ─── 最近退出（7天内） ───")
         lines.append(f"  {'代码':<8} {'名称':<10} {'最终盈亏':<10} {'策略':<8} {'持有天数':>6}")
         lines.append(f"  {'-' * 50}")
-        for r in recent_exits:
+        for r in recent_exits[:RECENT_EXIT_DISPLAY_LIMIT]:
             code = str(int(r["code"])).zfill(6)
             name = str(r["name"])
             pnl = float(r["pnl_pct"])
@@ -355,8 +356,12 @@ def _build_summary(tracker: pd.DataFrame, new_entries: int, closed_count: int) -
                 days_held = (xd - ed).days
             except Exception:
                 days_held = 0
-            flag = "+" if pnl > 0 else ("-" if pnl < 0 else " ")
-            lines.append(f"  {code:<8} {name:<10} {flag}{pnl:>+.1%}   {strat_label:<8} {days_held:>5}天")
+            lines.append(f"  {code:<8} {name:<10} {pnl:>+.1%}   {strat_label:<8} {days_held:>5}天")
+        hidden_count = len(recent_exits) - RECENT_EXIT_DISPLAY_LIMIT
+        if hidden_count > 0:
+            lines.append(
+                f"  另{hidden_count}只未展开；完整记录见 output/candidate_tracker.csv"
+            )
 
     return "\n".join(lines)
 

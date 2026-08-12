@@ -594,6 +594,23 @@ def _pending_research_summary(count: int) -> str:
     )
 
 
+def _dedupe_pending_research(pending: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """按股票合并深价/趋势研究缺口，避免正文和汇总重复计数。"""
+    combined: dict[str, dict] = {}
+    for code, name, label in pending:
+        item = combined.setdefault(str(code), {"name": str(name), "labels": set()})
+        if not item["name"] and name:
+            item["name"] = str(name)
+        item["labels"].add(str(label).removesuffix("候选"))
+
+    result = []
+    for code, item in combined.items():
+        labels = [label for label in ("深价", "趋势") if label in item["labels"]]
+        labels.extend(sorted(item["labels"] - set(labels)))
+        result.append((code, item["name"], "/".join(labels) + "候选"))
+    return result
+
+
 def _morning_brief_text(
         report_date: str,
         deep_data_date: str,
@@ -2049,6 +2066,7 @@ def daily_update() -> str:
                     if code not in existing_research:
                         pending.append((code, row.get("name", ""), label))
 
+        pending = _dedupe_pending_research(pending)
         if pending:
             lines.append(f"\n═══ ⚠ 待深度分析 ═══")
             for code, name, label in pending:

@@ -10,6 +10,7 @@ import pandas as pd
 from tools.account import Position
 from tools.auto_trader import (
     _build_deep_holding_rows,
+    _dedupe_pending_research,
     _holding_period_text,
     _morning_brief_text,
     _pending_research_summary,
@@ -126,6 +127,18 @@ class DailyReportClarityTest(unittest.TestCase):
         self.assertIn("已生成研究队列", text)
         self.assertIn("独立 AI/人工任务", text)
         self.assertNotIn("自动启动", text)
+
+    def test_pending_research_is_deduplicated_by_stock_and_combines_strategies(self):
+        pending = _dedupe_pending_research([
+            ("000657", "中钨高新", "深价候选"),
+            ("000657", "中钨高新", "趋势候选"),
+            ("600115", "中国东航", "趋势候选"),
+        ])
+
+        self.assertEqual(pending, [
+            ("000657", "中钨高新", "深价/趋势候选"),
+            ("600115", "中国东航", "趋势候选"),
+        ])
 
     def test_daily_candidate_view_excludes_blocking_earnings_event(self):
         with tempfile.TemporaryDirectory() as tmp:
