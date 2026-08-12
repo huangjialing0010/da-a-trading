@@ -1,12 +1,12 @@
 {
-  "cash": 1277170.41076825,
+  "cash": 671049.5544272499,
   "positions": {
     "600115": {
       "code": "600115",
       "name": "中国东航",
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
-      "current_price": 3.68368,
+      "current_price": 3.6,
       "strategy": "trend_reversal"
     },
     "600549": {
@@ -14,7 +14,31 @@
       "name": "厦门钨业",
       "quantity": 5500,
       "avg_cost": 58.803427182499995,
-      "current_price": 58.788729999999994,
+      "current_price": 56.41,
+      "strategy": "trend_reversal"
+    },
+    "601872": {
+      "code": "601872",
+      "name": "招商轮船",
+      "quantity": 9100,
+      "avg_cost": 17.90235447,
+      "current_price": 17.897879999999997,
+      "strategy": "trend_reversal"
+    },
+    "002493": {
+      "code": "002493",
+      "name": "荣盛石化",
+      "quantity": 15300,
+      "avg_cost": 13.536903379999998,
+      "current_price": 13.533519999999998,
+      "strategy": "trend_reversal"
+    },
+    "688111": {
+      "code": "688111",
+      "name": "金山办公",
+      "quantity": 900,
+      "avg_cost": 262.32756549999993,
+      "current_price": 262.26199999999994,
       "strategy": "trend_reversal"
     }
   },
@@ -38,6 +62,36 @@
       "quantity": 5500,
       "reason": "趋势入场: 利润改善+199.5pp, ROE=6.2% [paper_order:b93bcb16dc6ae897ce51]",
       "pnl": 0.0
+    },
+    {
+      "time": "2026-08-11T09:30:00",
+      "code": "601872",
+      "name": "招商轮船",
+      "direction": "BUY",
+      "price": 17.897879999999997,
+      "quantity": 9100,
+      "reason": "趋势入场: 利润改善+256.4pp, ROE=6.3% [paper_order:6270754857835dfddb03]",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-08-11T09:30:00",
+      "code": "002493",
+      "name": "荣盛石化",
+      "direction": "BUY",
+      "price": 13.533519999999998,
+      "quantity": 15300,
+      "reason": "趋势入场: 利润改善+371.9pp, ROE=6.3% [paper_order:81549f53ebc3df6ef068]",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-08-11T09:30:00",
+      "code": "688111",
+      "name": "金山办公",
+      "direction": "BUY",
+      "price": 262.26199999999994,
+      "quantity": 900,
+      "reason": "趋势入场: 利润改善+435.2pp, ROE=15.7% [paper_order:ccf16d4efc04f7e4bf43]",
+      "pnl": 0.0
     }
   ],
   "equity_snapshots": [
@@ -54,6 +108,13 @@
       "cash": 1277170.41,
       "market_value": 722648.93,
       "position_count": 2
+    },
+    {
+      "date": "2026-08-11",
+      "total_value": 1977513.92,
+      "cash": 671049.55,
+      "market_value": 1306464.36,
+      "position_count": 5
     }
   ],
   "created_at": "2026-08-07T16:35:53.783239"
