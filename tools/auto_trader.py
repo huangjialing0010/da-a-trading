@@ -30,7 +30,7 @@ from .deep_entry import (
     format_deep_entry_report,
     generate_deep_initial_orders,
 )
-from .signal_engine import check_monitor
+from .signal_engine import check_monitor, trailing_stop_metrics
 from .industry_analyzer import get_stock_industry
 from .commodity_fetcher import check_commodity_cycle
 from .earnings_alerts import (
@@ -722,12 +722,10 @@ def _trend_holding_row(
     mkt_val = price * pos.quantity
     hard_stop_pct = cfg["stops"]["hard_stop"]
     trail_trigger_pct = cfg["take_profit"]["trail_trigger"]
-    trail_drawdown_pct = cfg["take_profit"]["trail_drawdown"]
     hard_stop_price = pos.avg_cost * (1 + hard_stop_pct)
-    if pnl >= trail_trigger_pct and kline is not None and not kline.empty:
-        recent_high = float(kline["收盘"].tail(20).max())
-        trail_stop = recent_high * (1 - trail_drawdown_pct)
-        exit_info = f"止盈{trail_stop:.2f}/损{hard_stop_price:.2f}"
+    trailing = trailing_stop_metrics(pos, kline, cfg["take_profit"])
+    if trailing is not None:
+        exit_info = f"止盈{trailing['stop_price']:.2f}/损{hard_stop_price:.2f}"
     else:
         trigger_price = pos.avg_cost * (1 + trail_trigger_pct)
         exit_info = f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
@@ -771,10 +769,9 @@ def _build_deep_holding_rows(
         acc.update_price(pos.code, new_price)
         pnl = (new_price / pos.avg_cost - 1) if pos.avg_cost > 0 else 0
         hard_stop_price = pos.avg_cost * (1 + cfg["stops"]["hard_stop"])
-        if pnl >= cfg["take_profit"]["trail_trigger"]:
-            recent_high = float(kline["收盘"].tail(20).max())
-            trail_stop = recent_high * (1 - cfg["take_profit"]["trail_drawdown"])
-            exit_info = f"止盈{trail_stop:.2f}/损{hard_stop_price:.2f}"
+        trailing = trailing_stop_metrics(pos, kline, cfg["take_profit"])
+        if trailing is not None:
+            exit_info = f"止盈{trailing['stop_price']:.2f}/损{hard_stop_price:.2f}"
         else:
             trigger_price = pos.avg_cost * (1 + cfg["take_profit"]["trail_trigger"])
             exit_info = f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
@@ -957,13 +954,9 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
                 ma200 = float(kline["收盘"].rolling(200).mean().iloc[-1])
                 if price < ma200:
                     sell_reason = f"跌破MA200+亏损{pnl:.1%}"
-        elif pnl >= tp["trail_trigger"]:
-            kline = fetch_daily_kline(pos.code)
-            if not kline.empty:
-                recent_high = float(kline["收盘"].tail(20).max())
-                dd = (recent_high - price) / recent_high
-                if dd >= tp["trail_drawdown"]:
-                    sell_reason = f"移动止盈 回撤{dd:.1%}"
+        elif (trailing := trailing_stop_metrics(pos, kline, tp)) is not None:
+            if trailing["drawdown"] >= tp["trail_drawdown"]:
+                sell_reason = f"移动止盈 回撤{trailing['drawdown']:.1%}"
         elif date_exit["max_hold"]:
             sell_reason = f"持仓到期 {held_days}天"
 

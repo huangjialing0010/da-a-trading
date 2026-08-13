@@ -37,6 +37,25 @@ def load_config() -> dict:
         return yaml.safe_load(f)
 
 
+def trailing_stop_metrics(pos: Position, kline, take_profit: dict) -> dict | None:
+    """返回已激活移动止盈的峰值、回撤和止盈线；未激活返回 None。
+
+    启动条件必须看最近峰值是否曾跨过触发线，不能看当前浮盈是否仍在
+    触发线上方，否则跳空跌破触发线时会把已经启动的移动止盈重新关闭。
+    """
+    if pos.avg_cost <= 0 or pos.current_price <= 0 or kline is None or kline.empty:
+        return None
+    recent_high = float(kline["收盘"].tail(20).max())
+    if recent_high < pos.avg_cost * (1 + take_profit["trail_trigger"]):
+        return None
+    drawdown = (recent_high - pos.current_price) / recent_high
+    return {
+        "recent_high": recent_high,
+        "drawdown": drawdown,
+        "stop_price": recent_high * (1 - take_profit["trail_drawdown"]),
+    }
+
+
 def generate_signals(account: VirtualAccount) -> list[Signal]:
     """综合信号生成：检查持仓 + 候选池"""
     config = load_config()
@@ -96,18 +115,16 @@ def _check_positions(account: VirtualAccount, config: dict) -> list[Signal]:
                 ))
 
         # --- 移动止盈 ---
-        if pnl_pct >= tp["trail_trigger"]:
-            # 检查最高点回撤
-            recent_high = float(kline["收盘"].tail(20).max())
-            drawdown_from_high = (recent_high - current_price) / recent_high
-            if drawdown_from_high >= tp["trail_drawdown"]:
-                signals.append(Signal(
-                    type="SELL", code=code, name=pos.name, strategy=pos.strategy,
-                    action=f"移动止盈：全部卖出 {pos.quantity}股",
-                    reason=f"从高点{recent_high:.2f}回撤{drawdown_from_high:.1%}，触发止盈",
-                    price=current_price, quantity=pos.quantity, urgency="urgent",
-                ))
-                continue
+        trailing = trailing_stop_metrics(pos, kline, tp)
+        if trailing is not None and trailing["drawdown"] >= tp["trail_drawdown"]:
+            signals.append(Signal(
+                type="SELL", code=code, name=pos.name, strategy=pos.strategy,
+                action=f"移动止盈：全部卖出 {pos.quantity}股",
+                reason=(f"从高点{trailing['recent_high']:.2f}"
+                        f"回撤{trailing['drawdown']:.1%}，触发止盈"),
+                price=current_price, quantity=pos.quantity, urgency="urgent",
+            ))
+            continue
 
         # --- 基本面恶化 ---
         # 财报发布月检查（4月=年报+Q1, 8月=半年, 10月=Q3, 11月=Q3延迟）

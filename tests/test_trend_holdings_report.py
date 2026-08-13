@@ -78,6 +78,18 @@ class TrendHoldingsReportTest(unittest.TestCase):
         self.assertEqual(rows[0][8], "+10.00%")
         self.assertEqual(rows[0][-1], "趋势V2")
 
+    def test_row_keeps_trailing_stop_visible_after_price_gaps_below_trigger(self):
+        history = pd.DataFrame(
+            {"收盘": [130.0] + [110.0] * 19},
+            index=pd.date_range("2026-07-10", periods=20),
+        )
+
+        rows = _build_trend_holding_rows(
+            [position("000001", "甲", 110)], CFG, Mock(return_value=history),
+        )
+
+        self.assertEqual(rows[0][9], "止盈114.40/损80.00")
+
     def test_stale_holding_freezes_before_snapshot_and_keeps_pretrade_row(self):
         held = position("000001", "过期持仓", 110)
         account = Mock()

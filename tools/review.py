@@ -19,6 +19,7 @@ from .validation import (
     v2_validation_dates,
     virtual_validation_markdown,
 )
+from .signal_engine import trailing_stop_metrics
 
 BASE_DIR = Path(__file__).parent.parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
@@ -48,19 +49,15 @@ def _exit_info(pos, cfg=None) -> str:
         cfg = load_config()
     hard_stop_pct = cfg["stops"]["hard_stop"]
     trail_trigger_pct = cfg["take_profit"]["trail_trigger"]
-    trail_drawdown_pct = cfg["take_profit"]["trail_drawdown"]
 
     hard_stop_price = pos.avg_cost * (1 + hard_stop_pct)
-    pnl = pos.pnl_pct
-
     kline = fetch_daily_kline(pos.code)
     if kline.empty:
         return f"损{hard_stop_price:.2f}"
 
-    if pnl >= trail_trigger_pct:
-        recent_high = float(kline["收盘"].tail(20).max())
-        trail_stop = recent_high * (1 - trail_drawdown_pct)
-        return f"止盈{trail_stop:.2f}/损{hard_stop_price:.2f}"
+    trailing = trailing_stop_metrics(pos, kline, cfg["take_profit"])
+    if trailing is not None:
+        return f"止盈{trailing['stop_price']:.2f}/损{hard_stop_price:.2f}"
     else:
         trigger_price = pos.avg_cost * (1 + trail_trigger_pct)
         return f"→{trigger_price:.2f}/损{hard_stop_price:.2f}"
