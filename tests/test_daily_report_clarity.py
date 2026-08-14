@@ -89,14 +89,95 @@ class DailyReportClarityTest(unittest.TestCase):
                 False, "仓位49.4% > ERP上限30%",
             )
 
-        self.assertIn("晨间执行卡（次日开盘前）", text)
+        self.assertIn("投资者行动卡（次日开盘前）", text)
+        self.assertIn("今日结论：存在待执行虚拟订单，将在计划开盘自动模拟；无需人工下单", text)
         self.assertIn("持仓浮盈亏+111,389元", text)
         self.assertIn("持仓浮盈亏-181元", text)
         self.assertIn("688111 金山办公 100股（约26,260元，PENDING）", text)
         self.assertIn("待分析（深价优先）：002625 光启技术[深价]", text)
         self.assertIn("待分析（趋势观察，不影响 V2）：688111 金山办公[趋势]", text)
         self.assertIn("不买入/加仓", text)
-        self.assertIn("## 晨间执行卡（次日开盘前）", to_markdown(text))
+        self.assertIn("## 投资者行动卡（次日开盘前）", to_markdown(text))
+
+    def test_investor_action_card_surfaces_holdings_conflicts_and_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            deep_book = PaperOrderBook(Path(tmp) / "deep.json", "deep_value")
+            trend_book = PaperOrderBook(Path(tmp) / "trend.json", "trend_v2")
+            deep_account = SimpleNamespace(state=SimpleNamespace(
+                total_value=1_079_378, cash=558_399, total_pnl=87_679,
+            ))
+            trend_account = SimpleNamespace(
+                state=SimpleNamespace(
+                    total_value=1_938_186, cash=671_050, total_pnl=-61_814,
+                ),
+                get_holdings=lambda: [SimpleNamespace(code="600115", name="中国东航")],
+            )
+            deep_rows = [[
+                "000975", "山金国际", "8,300", "48天(06-26)", "18.04", "25.31",
+                "210,073", "+60,341", "+40.30%", "止盈23.88/损14.43", "深价仓",
+            ]]
+            trend_rows = [[
+                "600115", "中国东航", "108,400", "3天(08-10)", "3.68", "3.57",
+                "386,988", "-12,423", "-3.11%", "→4.61/损2.95", "趋势V2",
+            ]]
+            validation = {
+                "round_trips": 0, "sample_days": 5, "alpha": -0.0244,
+                "review_date": "2027-02-07", "ready": False,
+            }
+
+            text = _morning_brief_text(
+                "2026-08-13", "2026-08-13", False,
+                deep_account, deep_book, trend_account, trend_book, [],
+                False, "仓位48.3% > ERP上限30%",
+                deep_holding_rows=deep_rows,
+                trend_holding_rows=trend_rows,
+                research_conclusions={"600115": "淘汰"},
+                trend_validation_status=validation,
+                deep_round_trips=1,
+            )
+
+        self.assertIn("今日结论：无需人工操作（两仓均无待执行订单）", text)
+        self.assertIn(
+            "持仓风险（深价仓）：000975 山金国际 +60,341元/+40.30%（止盈23.88/损14.43）",
+            text,
+        )
+        self.assertIn(
+            "持仓风险（趋势V2）：600115 中国东航 -12,423元/-3.11%（→4.61/损2.95）",
+            text,
+        )
+        self.assertIn(
+            "研究冲突：600115 中国东航（趋势V2持有/研究淘汰；不自动卖出）",
+            text,
+        )
+        self.assertIn(
+            "验证进度：深价完整回合1；趋势V2完整回合0/30、净值样本5天、"
+            "超额-2.44%、最早审查2027-02-07",
+            text,
+        )
+        self.assertIn("策略判断：证据不足，继续虚拟盘，不进入实盘", text)
+
+    def test_investor_action_card_does_not_call_missing_quote_rows_empty_positions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            deep_book = PaperOrderBook(Path(tmp) / "deep.json", "deep_value")
+            trend_book = PaperOrderBook(Path(tmp) / "trend.json", "trend_v2")
+            deep_account = SimpleNamespace(state=SimpleNamespace(
+                total_value=1_000_000, cash=500_000, total_pnl=0, position_count=3,
+            ))
+            trend_account = SimpleNamespace(state=SimpleNamespace(
+                total_value=2_000_000, cash=2_000_000, total_pnl=0, position_count=0,
+            ))
+
+            text = _morning_brief_text(
+                "2026-08-13", "未知", True,
+                deep_account, deep_book, trend_account, trend_book, [],
+                False, "行情不可用", deep_holding_rows=[], trend_holding_rows=[],
+            )
+
+        self.assertIn(
+            "持仓风险（深价仓）：行情明细不可用（账户仍有3只持仓），不能判为空仓",
+            text,
+        )
+        self.assertIn("持仓风险（趋势V2）：空仓", text)
 
     def test_trend_plan_is_explicitly_v2_and_not_research_approved(self):
         with tempfile.TemporaryDirectory() as tmp:

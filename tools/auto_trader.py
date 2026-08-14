@@ -622,8 +622,13 @@ def _morning_brief_text(
         pending_research: list[tuple[str, str, str]] | None,
         erp_allowed: bool,
         erp_message: str,
+        deep_holding_rows: list[list[str]] | None = None,
+        trend_holding_rows: list[list[str]] | None = None,
+        research_conclusions: dict[str, str] | None = None,
+        trend_validation_status: dict | None = None,
+        deep_round_trips: int | None = None,
 ) -> str:
-    """次日开盘前的一屏摘要；正文继续保留完整研究和订单审计。"""
+    """次日开盘前的投资者行动卡；正文继续保留完整研究和订单审计。"""
     def account_text(label: str, account: VirtualAccount | None) -> str:
         if account is None:
             return f"{label}状态不可用"
@@ -655,14 +660,85 @@ def _morning_brief_text(
         if not erp_allowed:
             deep_action += f"；不买入/加仓（{erp_message}）"
 
+    books_available = deep_order_book is not None and trend_order_book is not None
+    active_orders = []
+    if deep_order_book is not None:
+        active_orders.extend(deep_order_book.active_orders())
+    if trend_order_book is not None:
+        active_orders.extend(trend_order_book.active_orders())
+    if active_orders:
+        action_conclusion = "存在待执行虚拟订单，将在计划开盘自动模拟；无需人工下单"
+    elif not books_available:
+        action_conclusion = "订单状态不完整；不人工操作，先看正文告警"
+    elif deep_frozen:
+        action_conclusion = "无需人工操作（深价仓数据熔断，趋势仓无待执行订单）"
+    else:
+        action_conclusion = "无需人工操作（两仓均无待执行订单）"
+
     lines = [
-        "\n═══ 晨间执行卡（次日开盘前） ═══",
+        "\n═══ 投资者行动卡（次日开盘前） ═══",
+        f"  今日结论：{action_conclusion}",
+        "  执行边界：仅虚拟盘自动模拟，不连接券商；研究结论不是订单",
         f"  数据：报告交易日{report_date} | 深价行情截至{deep_data_date}",
         f"  账户：{account_text('深价仓', deep_account)}",
         f"  账户：{account_text('趋势 V2（仅虚拟盘）', trend_account)}",
         f"  深价动作：{deep_action}",
         f"  趋势 V2 动作（仅虚拟盘）：{order_text(trend_order_book)}",
     ]
+
+    def holding_text(rows: list[list[str]] | None, account: VirtualAccount | None) -> str:
+        if rows is None:
+            return "持仓明细不可用，查看正文"
+        if not rows:
+            count = int(getattr(getattr(account, "state", None), "position_count", 0) or 0)
+            if count > 0:
+                return f"行情明细不可用（账户仍有{count}只持仓），不能判为空仓"
+            return "空仓"
+        return "；".join(
+            f"{row[0]} {row[1]} {row[7]}元/{row[8]}（{row[9]}）"
+            for row in rows
+        )
+
+    if deep_holding_rows is not None:
+        lines.append(
+            f"  持仓风险（深价仓）：{holding_text(deep_holding_rows, deep_account)}"
+        )
+    if trend_holding_rows is not None:
+        lines.append(
+            f"  持仓风险（趋势V2）：{holding_text(trend_holding_rows, trend_account)}"
+        )
+
+    if research_conclusions is not None:
+        conflicts = []
+        for rows, warehouse in (
+            (deep_holding_rows or [], "深价仓"),
+            (trend_holding_rows or [], "趋势V2"),
+        ):
+            for row in rows:
+                if research_conclusions.get(row[0]) == "淘汰":
+                    conflicts.append(
+                        f"{row[0]} {row[1]}（{warehouse}持有/研究淘汰；不自动卖出）"
+                    )
+        lines.append(
+            "  研究冲突：" + ("；".join(conflicts) if conflicts else "无持仓与淘汰结论冲突")
+        )
+
+    if trend_validation_status is not None:
+        deep_round_text = "未知" if deep_round_trips is None else str(deep_round_trips)
+        lines.append(
+            f"  验证进度：深价完整回合{deep_round_text}；"
+            f"趋势V2完整回合{trend_validation_status.get('round_trips', 0)}/30、"
+            f"净值样本{trend_validation_status.get('sample_days', 0)}天、"
+            f"超额{trend_validation_status.get('alpha', 0.0):+.2%}、"
+            f"最早审查{trend_validation_status.get('review_date', '未知')}"
+        )
+        if trend_validation_status.get("ready"):
+            judgment = "达到小额实盘讨论门槛，仍需人工决策"
+        elif trend_validation_status.get("status") == "未通过":
+            judgment = "趋势V2未通过，停止实盘讨论"
+        else:
+            judgment = "证据不足，继续虚拟盘，不进入实盘"
+        lines.append(f"  策略判断：{judgment}")
 
     if pending_research is None:
         lines.append("  待分析：研究队列读取失败，查看正文告警")
@@ -787,22 +863,26 @@ def _build_deep_holding_rows(
 
 def _trend_validation_text(trades: list, as_of: date, created_at: str) -> str:
     """读取已持久化趋势表现并生成纯虚拟盘验证区块。"""
-    import pandas as pd
-    from .validation import (
-        build_virtual_validation_status,
-        format_virtual_validation_text,
-        v2_validation_dates,
+    from .validation import format_virtual_validation_text
+
+    return format_virtual_validation_text(
+        _trend_validation_status(trades, as_of, created_at)
     )
+
+
+def _trend_validation_status(trades: list, as_of: date, created_at: str) -> dict:
+    """读取已持久化趋势表现并返回行动卡和正文共用的验证口径。"""
+    import pandas as pd
+    from .validation import build_virtual_validation_status, v2_validation_dates
 
     try:
         performance = pd.read_csv(TREND_PERF_FILE)
     except Exception:
         performance = pd.DataFrame()
     cutover, review_date = v2_validation_dates(created_at)
-    status = build_virtual_validation_status(
+    return build_virtual_validation_status(
         trades, performance, as_of=as_of, cutover=cutover, review_date=review_date,
     )
-    return format_virtual_validation_text(status)
 
 
 def trend_daily_update(calendar_info: dict | None = None) -> str:
@@ -2077,15 +2157,41 @@ def daily_update() -> str:
         trend_book = (
             PaperOrderBook(TREND_ORDER_FILE, "trend_v2") if trend_update_ok else None
         )
+        trend_rows_for_brief = None
+        trend_validation_for_brief = None
+        if trend_acc is not None:
+            trend_rows_for_brief = _build_trend_holding_rows(
+                list(trend_acc.get_holdings()), cfg,
+                lambda code: _get_kline(code, ttl_days=0),
+                trades=trend_acc.state.trades, as_of=signal_day,
+            )
+            trend_validation_for_brief = _trend_validation_status(
+                trend_acc.state.trades, signal_day, trend_acc.state.created_at,
+            )
+        held_codes_for_research = [row[0] for row in dv_rows]
+        held_codes_for_research.extend(row[0] for row in (trend_rows_for_brief or []))
+        try:
+            from .candidate_tracker import get_conclusion_map
+            held_research = get_conclusion_map(held_codes_for_research)
+        except Exception:
+            held_research = None
+        deep_stats = _trade_sample_stats(acc.state.trades)
         morning_brief = _morning_brief_text(
             expected_date or today.isoformat(), data_date, deep_frozen,
             acc, deep_order_book, trend_acc, trend_book,
             morning_research_queue if morning_research_queue is not None else pending,
             erp_cap_ok, erp_cap_msg,
+            deep_holding_rows=dv_rows,
+            trend_holding_rows=trend_rows_for_brief,
+            research_conclusions=held_research,
+            trend_validation_status=trend_validation_for_brief,
+            deep_round_trips=(
+                None if deep_stats.get("invalid") else deep_stats.get("round_trips", 0)
+            ),
         )
         lines.insert(1, morning_brief)
     except Exception as e:
-        lines.insert(1, f"\n═══ 晨间执行卡（次日开盘前） ═══\n  生成失败: {e}")
+        lines.insert(1, f"\n═══ 投资者行动卡（次日开盘前） ═══\n  生成失败: {e}")
 
     report = "\n".join(lines)
 
