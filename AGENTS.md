@@ -11,4 +11,5 @@
 - 策略参数 → `CLAUDE.md § 深价策略参数` + `§ 趋势反转策略参数`
 - 开发约定 → `CLAUDE.md § 开发约定`
 - 深度分析规范 → `CLAUDE.md § 深度分析规范`
+- 投资者使用与验证节奏 → `docs/INVESTOR_GUIDE.md`
 - 文档状态与设计索引 → `docs/README.md`
