@@ -1434,8 +1434,8 @@ def daily_update() -> str:
     deep_funnel["batch_plans"] = len(batch_state)
 
     # 1. 更新持仓价格（收集数据用于表格输出）
-    cfg = _load_config()
-    dv_rows, deep_holding_dates = _build_deep_holding_rows(acc, cfg, signal_day)
+    system_cfg = _load_config()
+    dv_rows, deep_holding_dates = _build_deep_holding_rows(acc, system_cfg, signal_day)
     for pos in acc.get_holdings():
         if pos.code not in deep_holding_dates:
             lines.append(f"[{pos.name}] 无法获取K线")
@@ -1506,7 +1506,7 @@ def daily_update() -> str:
             and deep_order_book.get(item["order_id"]).direction == "SELL"
         )
         # 成交可能改变持仓，日报必须重建最终持仓行。
-        dv_rows, deep_holding_dates = _build_deep_holding_rows(acc, cfg, signal_day)
+        dv_rows, deep_holding_dates = _build_deep_holding_rows(acc, system_cfg, signal_day)
 
     # 2. 止损/止盈检查（考虑分批计划）
     # 先获取 check_monitor 的非止损信号（基本面/时间止损/止盈保留）
@@ -1515,17 +1515,17 @@ def daily_update() -> str:
     for s in signals:
         if s.type == "SELL" and s.urgency == "urgent":
             code = s.code
-            cfg = batch_state.get(code)
+            batch_cfg = batch_state.get(code)
 
             # 如果是硬止损 且 还有分批未完成 → 用宽松止损线
-            if "硬止损" in s.reason and cfg and cfg["batch"] < len(cfg["batches"]):
+            if "硬止损" in s.reason and batch_cfg and batch_cfg["batch"] < len(batch_cfg["batches"]):
                 # 计算宽松止损线：最低批次价 × 0.92
-                batch_prices = [b["price"] for b in cfg["batches"] if b.get("price") and b["price"] > 0]
+                batch_prices = [b["price"] for b in batch_cfg["batches"] if b.get("price") and b["price"] > 0]
                 if batch_prices:
                     relaxed_stop = min(batch_prices) * 0.92
                     pos = acc.get_position(code)
                     if pos and pos.current_price > relaxed_stop:
-                        lines.append(f"[{s.name}] 触发标准止损({s.reason})，但还有{len(cfg['batches'])-cfg['batch']}批待执行，放宽至 {relaxed_stop:.2f}")
+                        lines.append(f"[{s.name}] 触发标准止损({s.reason})，但还有{len(batch_cfg['batches'])-batch_cfg['batch']}批待执行，放宽至 {relaxed_stop:.2f}")
                         continue  # 跳过，不执行
 
             # 收盘生成卖出订单，下一交易日开盘执行；卖单受阻会持续重试。
@@ -1556,24 +1556,24 @@ def daily_update() -> str:
     erp_cap_ok, erp_cap_msg = _check_erp_position_cap(acc)
     if not erp_cap_ok:
         lines.append(f"  [ERP闸门] {erp_cap_msg}，跳过分批加仓")
-    for code, cfg in batch_state.items():
+    for code, batch_cfg in batch_state.items():
         if deep_frozen:
             continue
         if code not in acc.get_holding_codes():
             continue
 
-        batch_num = cfg["batch"]
-        if batch_num >= len(cfg["batches"]):
+        batch_num = batch_cfg["batch"]
+        if batch_num >= len(batch_cfg["batches"]):
             continue
 
-        next_batch = cfg["batches"][batch_num]
+        next_batch = batch_cfg["batches"][batch_num]
         trigger = next_batch["trigger"]
 
         if trigger is None:
             continue
 
         # 批次间冷却期：至少隔5个自然日，防止V型反弹时三批瞬间买完
-        last_date = cfg.get("last_batch_date", "")
+        last_date = batch_cfg.get("last_batch_date", "")
         if last_date:
             days_since = (signal_day - date.fromisoformat(last_date)).days
             if days_since < 5:
@@ -1593,7 +1593,7 @@ def daily_update() -> str:
                 ind_ok, ind_msg = _check_industry_limit(code, acc)
                 if not ind_ok:
                     deep_funnel["industry_blocked"] += 1
-                    lines.append(f"  [行业闸门] {cfg['name']} 跳过加仓：{ind_msg}")
+                    lines.append(f"  [行业闸门] {batch_cfg['name']} 跳过加仓：{ind_msg}")
                     continue
                 qty = next_batch["qty"]
                 price = current
@@ -1602,16 +1602,16 @@ def daily_update() -> str:
                 try:
                     planned_date = _planned_trade_date(expected_date)
                     _, created = deep_order_book.create_order(
-                        code=code, name=cfg["name"], direction="BUY", quantity=qty,
+                        code=code, name=batch_cfg["name"], direction="BUY", quantity=qty,
                         signal_trade_date=expected_date, planned_trade_date=planned_date,
                         signal_reason=reason, reference_close=price, strategy="deep_value",
                         position_qty_at_signal=acc.get_position(code).quantity,
                         metadata={"kind": "batch_add", "batch_number": batch_num + 1},
                     )
                     if created:
-                        lines.append(f"  [加仓挂单] {cfg['name']}：{planned_date} 开盘 {qty}股")
+                        lines.append(f"  [加仓挂单] {batch_cfg['name']}：{planned_date} 开盘 {qty}股")
                 except ValueError as exc:
-                    lines.append(f"  [加仓挂单失败] {cfg['name']}：{exc}")
+                    lines.append(f"  [加仓挂单失败] {batch_cfg['name']}：{exc}")
 
         elif trigger == "stable":
             # 企稳触发：站上20日均线 + 成交量放大
@@ -1640,7 +1640,7 @@ def daily_update() -> str:
                 ind_ok, ind_msg = _check_industry_limit(code, acc)
                 if not ind_ok:
                     deep_funnel["industry_blocked"] += 1
-                    lines.append(f"  [行业闸门] {cfg['name']} 跳过加仓：{ind_msg}")
+                    lines.append(f"  [行业闸门] {batch_cfg['name']} 跳过加仓：{ind_msg}")
                     continue
                 qty = next_batch["qty"]
                 deep_funnel["add_attempts"] += 1
@@ -1648,16 +1648,16 @@ def daily_update() -> str:
                 try:
                     planned_date = _planned_trade_date(expected_date)
                     _, created = deep_order_book.create_order(
-                        code=code, name=cfg["name"], direction="BUY", quantity=qty,
+                        code=code, name=batch_cfg["name"], direction="BUY", quantity=qty,
                         signal_trade_date=expected_date, planned_trade_date=planned_date,
                         signal_reason=reason, reference_close=current, strategy="deep_value",
                         position_qty_at_signal=acc.get_position(code).quantity,
                         metadata={"kind": "batch_add", "batch_number": batch_num + 1},
                     )
                     if created:
-                        lines.append(f"  [加仓挂单] {cfg['name']}：{planned_date} 开盘 {qty}股")
+                        lines.append(f"  [加仓挂单] {batch_cfg['name']}：{planned_date} 开盘 {qty}股")
                 except ValueError as exc:
-                    lines.append(f"  [加仓挂单失败] {cfg['name']}：{exc}")
+                    lines.append(f"  [加仓挂单失败] {batch_cfg['name']}：{exc}")
 
     # 3.5 恐慌策略
     wl = fetch_market_water_level()
@@ -2161,7 +2161,7 @@ def daily_update() -> str:
         trend_validation_for_brief = None
         if trend_acc is not None:
             trend_rows_for_brief = _build_trend_holding_rows(
-                list(trend_acc.get_holdings()), cfg,
+                list(trend_acc.get_holdings()), system_cfg,
                 lambda code: _get_kline(code, ttl_days=0),
                 trades=trend_acc.state.trades, as_of=signal_day,
             )
