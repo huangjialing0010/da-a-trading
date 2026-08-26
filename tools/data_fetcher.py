@@ -28,6 +28,9 @@ MARKET_DIR = CACHE_DIR / "market"
 TRADE_CALENDAR_FILE = MARKET_DIR / "trade_calendar.csv"
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 MARKET_DATA_CUTOFF = time(16, 30)
+MARKET_SOURCE_MAX_AGE_DAYS = 3
+MARKET_SOURCE_MAX_LAG_TRADING_DAYS = 1
+_MARKET_FETCH_ATTEMPTED: set[str] = set()
 
 
 def _cache_path(subdir: Path, key: str, suffix: str = ".csv") -> str:
@@ -42,6 +45,91 @@ def _cache_valid(filepath: str, ttl_days: int) -> bool:
         return False
     mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
     return (datetime.now() - mtime).days < ttl_days
+
+
+def _now_shanghai() -> datetime:
+    return datetime.now(SHANGHAI_TZ)
+
+
+def _normalize_source_date(value) -> str:
+    if value is None or value == "":
+        return ""
+    try:
+        return pd.Timestamp(value).date().isoformat()
+    except (TypeError, ValueError):
+        return ""
+
+
+def _market_record_data_date(record: dict | None) -> str:
+    if not isinstance(record, dict):
+        return ""
+    return _normalize_source_date(record.get("data_date") or record.get("date"))
+
+
+def _market_record_usable(
+    record: dict | None,
+    max_age_days: int = MARKET_SOURCE_MAX_AGE_DAYS,
+) -> bool:
+    source_date = _market_record_data_date(record)
+    if not source_date:
+        return False
+    source_day = date.fromisoformat(source_date)
+    try:
+        calendar = pd.read_csv(TRADE_CALENDAR_FILE, dtype=str)
+        trade_dates = _normalize_trade_dates(calendar.get("trade_date", []))
+        expected = resolve_expected_trade_date(trade_dates, _now_shanghai())
+        if expected.get("status") == "ready" and expected.get("expected_date"):
+            reference_day = date.fromisoformat(expected["expected_date"])
+            if source_day > reference_day:
+                return False
+            lag = sum(
+                source_day < date.fromisoformat(value) <= reference_day
+                for value in trade_dates
+            )
+            return lag <= MARKET_SOURCE_MAX_LAG_TRADING_DAYS
+    except (OSError, ValueError, TypeError):
+        pass
+
+    age = (_now_shanghai().date() - source_day).days
+    return 0 <= age <= max_age_days
+
+
+def _market_cache_reusable(record: dict | None) -> bool:
+    """同一自然日已拉取且来源日期仍可用时才复用。
+
+    不使用文件 mtime；GitHub checkout 会重写 mtime，无法代表数据日期。
+    """
+    if not _market_record_usable(record):
+        return False
+    fetched_at = record.get("fetched_at", "") if isinstance(record, dict) else ""
+    try:
+        fetched_date = pd.Timestamp(fetched_at).date()
+    except (TypeError, ValueError):
+        return False
+    return fetched_date == _now_shanghai().date()
+
+
+def _load_json_record(path: str | Path) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            value = json.load(f)
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _market_record(
+    values: dict,
+    *,
+    data_date,
+    source: str,
+) -> dict:
+    return {
+        **values,
+        "data_date": _normalize_source_date(data_date),
+        "source": source,
+        "fetched_at": _now_shanghai().isoformat(timespec="seconds"),
+    }
 
 
 def _normalize_trade_dates(values) -> list[str]:
@@ -359,137 +447,207 @@ def fetch_financial_indicators(code: str, ttl_days: int = 30) -> dict:
 def fetch_margin_balance(ttl_days: int = 1) -> dict:
     """获取两融余额"""
     cache_file = _cache_path(MARKET_DIR, "margin", ".json")
-    if _cache_valid(cache_file, ttl_days):
-        with open(cache_file, "r", encoding="utf-8") as f:
-            return json.load(f)
+    cached = _load_json_record(cache_file)
+    if _market_cache_reusable(cached):
+        return cached
+    if cache_file in _MARKET_FETCH_ATTEMPTED:
+        return cached
+    _MARKET_FETCH_ATTEMPTED.add(cache_file)
 
     result = {}
     try:
-        margin_total = 0
-        short_total = 0
-        last_date = ""
-
-        # 沪市
         df_sh = ak.macro_china_market_margin_sh()
-        if df_sh is not None and not df_sh.empty:
-            last = df_sh.iloc[-1]
-            last_date = str(last.get("日期", ""))
-            margin_total += float(last.get("融资余额", 0))
-            short_total += float(last.get("融券余额", 0))
-
-        # 深市
         df_sz = ak.macro_china_market_margin_sz()
-        if df_sz is not None and not df_sz.empty:
-            last = df_sz.iloc[-1]
-            if not last_date:
-                last_date = str(last.get("日期", ""))
-            margin_total += float(last.get("融资余额", 0))
-            short_total += float(last.get("融券余额", 0))
-
-        if margin_total > 0:
-            result = {
-                "date": last_date,
-                "margin_balance": round(margin_total, 2),
-                "short_balance": round(short_total, 2),
-            }
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(result, f, ensure_ascii=False)
-    except Exception as e:
-        if os.path.exists(cache_file):
-            with open(cache_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        print(f"[data_fetcher] 获取两融数据失败: {e}")
-
-    return result
-
-
-def fetch_index_pe(ttl_days: int = 1) -> dict:
-    """获取主要指数PE，用于算ERP"""
-    cache_file = _cache_path(MARKET_DIR, "index_pe", ".json")
-    if _cache_valid(cache_file, ttl_days):
-        with open(cache_file, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    result = {}
-    try:
-        # 沪深300 PE
-        df300 = ak.stock_zh_index_value_csindex(symbol="000300")
-        if df300 is not None and not df300.empty:
-            last = df300.iloc[-1]
-            result["hs300_pe"] = float(last.get("市盈率1", 0))
-
-        # 中证500 PE
-        df500 = ak.stock_zh_index_value_csindex(symbol="000905")
-        if df500 is not None and not df500.empty:
-            last = df500.iloc[-1]
-            result["zz500_pe"] = float(last.get("市盈率1", 0))
+        if df_sh is not None and not df_sh.empty and df_sz is not None and not df_sz.empty:
+            sh = df_sh.copy()
+            sz = df_sz.copy()
+            sh["_date"] = sh["日期"].map(_normalize_source_date)
+            sz["_date"] = sz["日期"].map(_normalize_source_date)
+            common_dates = set(sh["_date"]) & set(sz["_date"])
+            common_dates.discard("")
+            source_date = max(common_dates, default="")
+            if source_date:
+                sh_last = sh[sh["_date"] == source_date].iloc[-1]
+                sz_last = sz[sz["_date"] == source_date].iloc[-1]
+                margin_total = float(sh_last.get("融资余额", 0)) + float(
+                    sz_last.get("融资余额", 0)
+                )
+                short_total = float(sh_last.get("融券余额", 0)) + float(
+                    sz_last.get("融券余额", 0)
+                )
+                if margin_total > 0:
+                    result = _market_record(
+                        {
+                            "date": source_date,
+                            "margin_balance": round(margin_total, 2),
+                            "short_balance": round(short_total, 2),
+                        },
+                        data_date=source_date,
+                        source="jin10",
+                    )
 
         if result:
             with open(cache_file, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False)
     except Exception as e:
-        if os.path.exists(cache_file):
-            with open(cache_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        print(f"[data_fetcher] 获取指数PE失败: {e}")
+        print(f"[data_fetcher] 获取两融数据失败: {e}")
 
-    return result
+    return result or cached
 
 
-def fetch_bond_yield(ttl_days: int = 1) -> float:
-    """获取中国10年期国债收益率"""
-    cache_file = _cache_path(MARKET_DIR, "bond_yield", ".json")
-    if _cache_valid(cache_file, ttl_days):
-        with open(cache_file, "r", encoding="utf-8") as f:
-            return json.load(f).get("yield_10y", 0.025)
+def fetch_index_pe(ttl_days: int = 1) -> dict:
+    """获取主要指数PE，用于算ERP"""
+    cache_file = _cache_path(MARKET_DIR, "index_pe", ".json")
+    cached = _load_json_record(cache_file)
+    if _market_cache_reusable(cached):
+        return cached
+    if cache_file in _MARKET_FETCH_ATTEMPTED:
+        return cached
+    _MARKET_FETCH_ATTEMPTED.add(cache_file)
 
-    result = 0.025  # 默认2.5%
+    result = {}
     try:
-        df = ak.bond_china_yield()
+        df300 = ak.stock_zh_index_value_csindex(symbol="000300")
+        if df300 is not None and not df300.empty:
+            last = df300.dropna(subset=["日期"]).sort_values("日期").iloc[-1]
+            result["hs300_pe"] = float(last.get("市盈率1", 0))
+            result["data_date"] = _normalize_source_date(last.get("日期"))
+    except Exception as e:
+        print(f"[data_fetcher] 获取沪深300 PE失败: {e}")
+
+    try:
+        df500 = ak.stock_zh_index_value_csindex(symbol="000905")
+        if df500 is not None and not df500.empty:
+            last = df500.dropna(subset=["日期"]).sort_values("日期").iloc[-1]
+            result["zz500_pe"] = float(last.get("市盈率1", 0))
+            result["zz500_data_date"] = _normalize_source_date(last.get("日期"))
+    except Exception as e:
+        print(f"[data_fetcher] 获取中证500 PE失败: {e}")
+
+    if result.get("hs300_pe", 0) > 0 and result.get("data_date"):
+        result = _market_record(
+            result,
+            data_date=result["data_date"],
+            source="csindex",
+        )
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False)
+
+    return result if result.get("fetched_at") else cached
+
+
+def _fetch_bond_yield_record(ttl_days: int = 1) -> dict:
+    cache_file = _cache_path(MARKET_DIR, "bond_yield", ".json")
+    cached = _load_json_record(cache_file)
+    if _market_cache_reusable(cached):
+        return cached
+    if cache_file in _MARKET_FETCH_ATTEMPTED:
+        return cached
+    _MARKET_FETCH_ATTEMPTED.add(cache_file)
+
+    result = {}
+    try:
+        today = _now_shanghai().date()
+        start = today - timedelta(days=30)
+        df = ak.bond_china_yield(
+            start_date=start.strftime("%Y%m%d"),
+            end_date=today.strftime("%Y%m%d"),
+        )
         if df is not None and not df.empty:
-            # 中债国债收益率曲线 的 '10年' 列
             gov_row = df[df["曲线名称"] == "中债国债收益率曲线"]
             if not gov_row.empty:
-                val = gov_row.iloc[0]["10年"]
-                result = float(val) / 100.0
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump({"yield_10y": result}, f)
+                gov_row = gov_row.dropna(subset=["日期", "10年"]).sort_values("日期")
+                if not gov_row.empty:
+                    last = gov_row.iloc[-1]
+                    result = _market_record(
+                        {"yield_10y": float(last["10年"]) / 100.0},
+                        data_date=last["日期"],
+                        source="chinabond",
+                    )
+        if result:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False)
     except Exception as e:
         print(f"[data_fetcher] 获取国债收益率失败: {e}")
 
-    return result
+    return result or cached
+
+
+def fetch_bond_yield(ttl_days: int = 1) -> float:
+    """获取中国10年期国债收益率；来源过期时返回0，触发ERP保守降级。"""
+    record = _fetch_bond_yield_record(ttl_days)
+    if not _market_record_usable(record):
+        return 0.0
+    return float(record.get("yield_10y", 0.0))
+
+
+def _erp_state_from_records(pe_data: dict, bond_data: dict) -> dict:
+    warnings = []
+    pe_date = _market_record_data_date(pe_data)
+    bond_date = _market_record_data_date(bond_data)
+    if not _market_record_usable(pe_data):
+        warnings.append(f"沪深300 PE来源日期不可用或过期({pe_date or '未知'})")
+    if not _market_record_usable(bond_data):
+        warnings.append(f"10年国债来源日期不可用或过期({bond_date or '未知'})")
+
+    pe = float(pe_data.get("hs300_pe", 0) or 0)
+    bond = float(bond_data.get("yield_10y", 0) or 0)
+    if pe <= 0:
+        warnings.append("沪深300 PE数值不可用")
+    if bond <= 0:
+        warnings.append("10年国债收益率数值不可用")
+
+    if warnings:
+        return {
+            "status": "degraded",
+            "erp": 0.0,
+            "data_date": "",
+            "warnings": warnings,
+        }
+
+    return {
+        "status": "ready",
+        "erp": (1.0 / pe) - bond,
+        "data_date": min(pe_date, bond_date),
+        "warnings": [],
+    }
 
 
 def calculate_erp() -> float:
     """计算沪深300风险溢价 ERP = 1/PE - 10年期国债收益率"""
     pe_data = fetch_index_pe()
-    bond_yield = fetch_bond_yield()
-
-    hs300_pe = pe_data.get("hs300_pe", 0)
-    if hs300_pe <= 0:
-        return 0.0
-
-    earnings_yield = 1.0 / hs300_pe
-    erp = earnings_yield - bond_yield
-    return erp
+    bond_data = _fetch_bond_yield_record()
+    return float(_erp_state_from_records(pe_data, bond_data)["erp"])
 
 
-def _save_erp_history(erp: float):
-    """追加当日ERP到历史文件"""
+def _save_erp_history(erp: float, source_data_date: str) -> bool:
+    """按基础数据日期追加ERP；过期数据不伪装成当天历史。"""
     erp_file = MARKET_DIR / "erp_history.csv"
-    today_str = date.today().isoformat()
-    new_row = pd.DataFrame([{"date": today_str, "erp": round(erp, 4)}])
+    source_date = _normalize_source_date(source_data_date)
+    source_record = {"data_date": source_date}
+    if erp <= 0 or not _market_record_usable(source_record):
+        return False
+    new_row = pd.DataFrame(
+        [
+            {
+                "date": source_date,
+                "erp": round(erp, 4),
+                "quality": "verified",
+                "recorded_at": _now_shanghai().isoformat(timespec="seconds"),
+            }
+        ]
+    )
     if erp_file.exists():
         df = pd.read_csv(erp_file)
-        # 今天已有则跳过
-        if today_str in df["date"].values:
-            return
+        if source_date in df["date"].astype(str).values:
+            return False
         df = pd.concat([df, new_row], ignore_index=True)
     else:
         df = new_row
     df.to_csv(erp_file, index=False, encoding="utf-8")
     global _erp_history_cache
     _erp_history_cache = None  # 清除缓存，下次重新加载
+    return True
 
 
 _erp_history_cache = None
@@ -509,6 +667,8 @@ def get_erp_position_cap(erp: float | None = None) -> dict:
     if _erp_history_cache is None and erp_file.exists():
         try:
             df = pd.read_csv(erp_file)
+            if "quality" in df.columns:
+                df = df[df["quality"] == "verified"]
             if len(df) >= 60:
                 _erp_history_cache = list(df["erp"])
         except Exception:
@@ -549,23 +709,37 @@ def fetch_market_water_level() -> dict:
     """获取综合市场水位"""
     margin = fetch_margin_balance()
     index_pe = fetch_index_pe()
-    bond_yield = fetch_bond_yield()
-    erp = calculate_erp()
+    bond_data = _fetch_bond_yield_record()
+    erp_state = _erp_state_from_records(index_pe, bond_data)
+    erp = float(erp_state["erp"])
+
+    data_warnings = list(erp_state["warnings"])
+    margin_date = _market_record_data_date(margin)
+    if not _market_record_usable(margin):
+        data_warnings.append(f"两融来源日期不可用或过期({margin_date or '未知'})")
 
     # 保存ERP历史，用于计算分位
-    if erp > 0:
+    if erp_state["status"] == "ready":
         try:
-            _save_erp_history(erp)
+            _save_erp_history(erp, erp_state["data_date"])
         except Exception:
             pass
 
     return {
-        "date": date.today().isoformat(),
+        "date": _now_shanghai().date().isoformat(),
         "erp": round(erp, 4),
         "hs300_pe": index_pe.get("hs300_pe", 0),
         "zz500_pe": index_pe.get("zz500_pe", 0),
-        "bond_10y": round(bond_yield, 4),
+        "bond_10y": round(float(bond_data.get("yield_10y", 0) or 0), 4),
         "margin_balance": margin.get("margin_balance", 0),
+        "data_status": "ready" if not data_warnings else "degraded",
+        "erp_status": erp_state["status"],
+        "data_dates": {
+            "margin": margin_date,
+            "index_pe": _market_record_data_date(index_pe),
+            "bond_10y": _market_record_data_date(bond_data),
+        },
+        "data_warnings": data_warnings,
     }
 
 

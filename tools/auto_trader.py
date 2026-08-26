@@ -1266,9 +1266,7 @@ def _market_monitor() -> list[str]:
     warnings = []
 
     bm_file = BASE_DIR / "data" / "market" / "benchmark_000300.csv"
-    margin_file = BASE_DIR / "data" / "market" / "margin.json"
-    pe_file = BASE_DIR / "data" / "market" / "index_pe.json"
-    bond_file = BASE_DIR / "data" / "market" / "bond_yield.json"
+    water_level = fetch_market_water_level()
 
     # 1. CSI 300 关键支撑位
     try:
@@ -1297,37 +1295,37 @@ def _market_monitor() -> list[str]:
         warnings.append(f"[监控] CSI 300读取失败: {e}")
 
     # 2. 两融余额
-    try:
-        if margin_file.exists():
-            with open(margin_file, "r", encoding="utf-8") as f:
-                margin = json.load(f)
-            mb = margin.get("margin_balance", 0) / 1e12  # 转万亿
-            if mb > 0:
-                warnings.append(f"两融余额: {mb:.2f}万亿")
-                if mb < 2.9:
-                    warnings.append(f"⚠️ 两融<2.9万亿，杠杆资金系统性撤离")
-                elif mb < 2.95:
-                    warnings.append(f"⚠️ 两融偏低({mb:.2f}万亿)，注意趋势")
-    except Exception:
-        pass
+    mb = float(water_level.get("margin_balance", 0) or 0) / 1e12
+    margin_date = water_level.get("data_dates", {}).get("margin", "")
+    if mb > 0 and margin_date:
+        warnings.append(f"两融余额: {mb:.2f}万亿（截至{margin_date}）")
+        if mb < 2.9:
+            warnings.append("⚠️ 两融<2.9万亿，杠杆资金系统性撤离")
+        elif mb < 2.95:
+            warnings.append(f"⚠️ 两融偏低({mb:.2f}万亿)，注意趋势")
 
     # 3. PE + ERP + 仓位建议
     try:
         from .data_fetcher import get_erp_position_cap
-        if pe_file.exists() and bond_file.exists():
-            with open(pe_file, "r", encoding="utf-8") as f:
-                pe_data = json.load(f)
-            with open(bond_file, "r", encoding="utf-8") as f:
-                bond_data = json.load(f)
-            pe = pe_data.get("hs300_pe", 0)
-            y10 = bond_data.get("yield_10y", 0)
-            if pe > 0 and y10 > 0:
-                erp = (1 / pe) - y10
-                cap_info = get_erp_position_cap(erp)
-                warnings.append(f"PE: {pe:.2f} | 10Y: {y10:.2%} | ERP: {erp:.2%} ({cap_info['level']}, 分位{cap_info['pct']:.0f}%)")
-                warnings.append(f"建议仓位上限: {cap_info['cap']:.0%}（{cap_info['method']}法）")
+        pe = float(water_level.get("hs300_pe", 0) or 0)
+        y10 = float(water_level.get("bond_10y", 0) or 0)
+        erp = float(water_level.get("erp", 0) or 0)
+        if water_level.get("erp_status") == "ready" and pe > 0 and y10 > 0 and erp > 0:
+            cap_info = get_erp_position_cap(erp)
+            dates = water_level.get("data_dates", {})
+            warnings.append(
+                f"PE: {pe:.2f}（{dates.get('index_pe', '')}） | "
+                f"10Y: {y10:.2%}（{dates.get('bond_10y', '')}） | "
+                f"ERP: {erp:.2%} ({cap_info['level']}, 分位{cap_info['pct']:.0f}%)"
+            )
+            warnings.append(f"建议仓位上限: {cap_info['cap']:.0%}（{cap_info['method']}法）")
+        else:
+            warnings.append("⚠️ ERP基础数据不可用或过期，新增资金按30%保守上限降级")
     except Exception:
-        pass
+        warnings.append("⚠️ ERP监控异常，新增资金按30%保守上限降级")
+
+    for message in water_level.get("data_warnings", []):
+        warnings.append(f"⚠️ 市场水位数据：{message}")
 
     # 4. 行业结构 — PE极端值 + 领涨/领跌
     try:

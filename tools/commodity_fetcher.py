@@ -6,20 +6,43 @@
 
 import json
 import os
-from datetime import datetime, date
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import akshare as ak
 
+from .data_fetcher import _market_record_usable
+
 BASE_DIR = Path(__file__).parent.parent
 CACHE_DIR = BASE_DIR / "data" / "market"
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+_FETCH_ATTEMPTED: set[str] = set()
 
 
-def _cache_valid(filepath: str, ttl_days: int) -> bool:
-    if not os.path.exists(filepath):
+def _normalize_date(value) -> str:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date().isoformat()
+    except (TypeError, ValueError):
+        try:
+            return value.date().isoformat()
+        except (AttributeError, TypeError, ValueError):
+            return ""
+
+
+def _record_usable(record: dict | None) -> bool:
+    return _market_record_usable(record)
+
+
+def _cache_reusable(record: dict | None) -> bool:
+    if not _record_usable(record):
         return False
-    mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
-    return (datetime.now() - mtime).days < ttl_days
+    fetched_at = record.get("fetched_at", "")
+    try:
+        fetched_date = datetime.fromisoformat(fetched_at).date()
+    except (TypeError, ValueError):
+        return False
+    return fetched_date == datetime.now(SHANGHAI_TZ).date()
 
 
 # 关键词 → 商品期货（按优先级匹配，命中即止）
@@ -76,14 +99,21 @@ def fetch_commodity_percentile(symbol: str, lookback_years: int = 3,
                                ttl_days: int = 1) -> dict | None:
     """获取商品期货当前价格在N年历史中的分位。默认3年(避免2020疫情崩盘虚高)。"""
     cache_file = str(CACHE_DIR / f"commodity_{symbol}.json")
-    if _cache_valid(cache_file, ttl_days):
-        with open(cache_file, "r", encoding="utf-8") as f:
-            return json.load(f)
+    cached = _load_cache_or_none(cache_file, require_fresh=False)
+    if _cache_reusable(cached):
+        return cached
+    if cache_file in _FETCH_ATTEMPTED:
+        return cached if _record_usable(cached) else None
+    _FETCH_ATTEMPTED.add(cache_file)
 
     try:
         df = ak.futures_main_sina(symbol=symbol)
         if df is None or df.empty:
-            return _load_cache_or_none(cache_file)
+            return cached if _record_usable(cached) else None
+
+        date_col = "日期" if "日期" in df.columns else "date" if "date" in df.columns else ""
+        if date_col:
+            df = df.sort_values(date_col)
 
         close_col = "close" if "close" in df.columns else df.columns[4]
         close = df[close_col].dropna()
@@ -99,6 +129,9 @@ def fetch_commodity_percentile(symbol: str, lookback_years: int = 3,
 
         chg_1y = (current / float(close.iloc[-250]) - 1) if len(close) >= 250 else 0
         chg_1m = (current / float(close.iloc[-20]) - 1) if len(close) >= 20 else 0
+        source_date = _normalize_date(df[date_col].iloc[-1]) if date_col else ""
+        if not source_date:
+            return cached if _record_usable(cached) else None
 
         result = {
             "symbol": symbol,
@@ -108,7 +141,10 @@ def fetch_commodity_percentile(symbol: str, lookback_years: int = 3,
             "chg_1m": round(chg_1m, 4),
             "high_5y": round(high, 2),
             "low_5y": round(low, 2),
-            "date": date.today().isoformat(),
+            "date": source_date,
+            "data_date": source_date,
+            "source": "sina_futures",
+            "fetched_at": datetime.now(SHANGHAI_TZ).isoformat(timespec="seconds"),
         }
 
         with open(cache_file, "w", encoding="utf-8") as f:
@@ -116,13 +152,15 @@ def fetch_commodity_percentile(symbol: str, lookback_years: int = 3,
         return result
 
     except Exception:
-        return _load_cache_or_none(cache_file)
+        return cached if _record_usable(cached) else None
 
 
-def _load_cache_or_none(path: str) -> dict | None:
+def _load_cache_or_none(path: str, require_fresh: bool = True) -> dict | None:
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            value = json.load(f)
+        if not require_fresh or _record_usable(value):
+            return value
     return None
 
 

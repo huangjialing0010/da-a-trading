@@ -29,6 +29,7 @@
 | `superpowers/specs/2026-08-07-minimal-selection-enhancement-design.md` | 部分实施/暂缓 | 日报隔离已完成；完整五问与前瞻追踪暂缓，首仓改走最小闭环 |
 | `superpowers/specs/2026-08-07-minimal-deep-entry-design.md` | 已实施 | 最小结构化建议可生成普通深价 T+1 虚拟首仓订单；完整五问平台暂缓 |
 | `superpowers/specs/2026-08-07-p0-runtime-reliability-design.md` | 已实施 | GBK输出、研究队列文案与深价语义幂等 |
+| `superpowers/specs/2026-08-26-market-water-freshness-design.md` | 已实施 | 市场水位来源日期、ERP失败关闭与历史防污染 |
 
 ## 维护规则
 
