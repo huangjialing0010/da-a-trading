@@ -6,7 +6,7 @@
       "name": "中国东航",
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
-      "current_price": 3.49,
+      "current_price": 3.41,
       "strategy": "trend_reversal"
     },
     "600549": {
@@ -14,7 +14,7 @@
       "name": "厦门钨业",
       "quantity": 5500,
       "avg_cost": 58.803427182499995,
-      "current_price": 51.68,
+      "current_price": 50.0,
       "strategy": "trend_reversal"
     },
     "601872": {
@@ -22,7 +22,7 @@
       "name": "招商轮船",
       "quantity": 9100,
       "avg_cost": 17.90235447,
-      "current_price": 18.39,
+      "current_price": 17.81,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -30,7 +30,7 @@
       "name": "荣盛石化",
       "quantity": 15300,
       "avg_cost": 13.536903379999998,
-      "current_price": 14.64,
+      "current_price": 14.36,
       "strategy": "trend_reversal"
     },
     "688111": {
@@ -38,7 +38,7 @@
       "name": "金山办公",
       "quantity": 900,
       "avg_cost": 262.32756549999993,
-      "current_price": 247.36,
+      "current_price": 238.4,
       "strategy": "trend_reversal"
     }
   },
@@ -198,6 +198,13 @@
       "total_value": 1947570.55,
       "cash": 671049.55,
       "market_value": 1276521.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-09-02",
+      "total_value": 1912032.55,
+      "cash": 671049.55,
+      "market_value": 1240983.0,
       "position_count": 5
     }
   ],
