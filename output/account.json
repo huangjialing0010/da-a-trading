@@ -1,12 +1,12 @@
 {
-  "cash": 558399.0,
+  "cash": 464169.336472,
   "positions": {
     "000975": {
       "code": "000975",
       "name": "山金国际",
       "quantity": 8300,
       "avg_cost": 18.04,
-      "current_price": 26.25,
+      "current_price": 25.8,
       "strategy": "deep_value"
     },
     "002027": {
@@ -20,9 +20,9 @@
     "002558": {
       "code": "002558",
       "name": "巨人网络",
-      "quantity": 5200,
-      "avg_cost": 25.705,
-      "current_price": 27.67,
+      "quantity": 8600,
+      "avg_cost": 26.499495759069767,
+      "current_price": 27.49,
       "strategy": "deep_value"
     }
   },
@@ -95,6 +95,16 @@
       "price": 24.18,
       "quantity": 2600,
       "reason": "第2批加仓: 跌至目标价24.51",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-09-07T09:30:00",
+      "code": "002558",
+      "name": "巨人网络",
+      "direction": "BUY",
+      "price": 27.707679999999996,
+      "quantity": 3400,
+      "reason": "第3批加仓: 企稳确认 (站上MA20, 60日线走平, 放量) [paper_order:5c3aa15528f528f30377]",
       "pnl": 0.0
     }
   ],
@@ -412,6 +422,13 @@
       "total_value": 1071926.0,
       "cash": 558399.0,
       "market_value": 513527.0,
+      "position_count": 3
+    },
+    {
+      "date": "2026-09-07",
+      "total_value": 1066491.34,
+      "cash": 464169.34,
+      "market_value": 602322.0,
       "position_count": 3
     }
   ],
