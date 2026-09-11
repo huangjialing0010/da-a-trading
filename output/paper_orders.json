@@ -27,5 +27,33 @@
       "kind": "batch_add",
       "batch_number": 3
     }
+  },
+  {
+    "order_id": "e764882911c4a868bb6e",
+    "warehouse": "deep_value",
+    "code": "000975",
+    "name": "山金国际",
+    "direction": "SELL",
+    "quantity": 8300,
+    "signal_trade_date": "2026-09-11",
+    "planned_trade_date": "2026-09-14",
+    "signal_reason": "从高点29.26回撤13.2%，触发止盈",
+    "reference_close": 25.39,
+    "strategy": "deep_value",
+    "position_qty_at_signal": 8300,
+    "close_position": true,
+    "status": "PENDING",
+    "attempts": 0,
+    "last_block_reason": "",
+    "fill_trade_date": "",
+    "open_price": 0.0,
+    "fill_price": 0.0,
+    "fees": 0.0,
+    "gap_pct": 0.0,
+    "created_at": "2026-09-11T13:41:58.189196",
+    "updated_at": "2026-09-11T13:41:58.189196",
+    "metadata": {
+      "kind": "deep_exit"
+    }
   }
 ]

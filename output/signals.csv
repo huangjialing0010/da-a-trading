@@ -1,2 +1,2 @@
 time,type,code,name,strategy,action,reason,price,quantity,urgency
-2026-07-01T16:41:09.487225,SELL,002558,巨人网络,deep_value,PE分位止盈：卖出 1200股,价格近5年85%分位，触发50%阈值,27.56,1200,urgent
+2026-09-11T13:41:58.156416,SELL,000975,山金国际,deep_value,移动止盈：全部卖出 8300股,从高点29.26回撤13.2%，触发止盈,25.39,8300,urgent
