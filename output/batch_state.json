@@ -20,27 +20,6 @@
       }
     ]
   },
-  "000975": {
-    "name": "山金国际",
-    "batch": 1,
-    "batches": [
-      {
-        "qty": 8300,
-        "price": 18.04,
-        "trigger": null
-      },
-      {
-        "qty": 8300,
-        "price": 16.24,
-        "trigger": 16.24
-      },
-      {
-        "qty": 11000,
-        "price": null,
-        "trigger": "stable"
-      }
-    ]
-  },
   "002558": {
     "name": "巨人网络",
     "batch": 3,
