@@ -6,7 +6,7 @@
       "name": "分众传媒",
       "quantity": 31100,
       "avg_cost": 4.82,
-      "current_price": 4.66,
+      "current_price": 4.76,
       "strategy": "deep_value"
     },
     "002558": {
@@ -14,7 +14,7 @@
       "name": "巨人网络",
       "quantity": 8600,
       "avg_cost": 26.499495759069767,
-      "current_price": 24.97,
+      "current_price": 24.79,
       "strategy": "deep_value"
     }
   },
@@ -487,6 +487,13 @@
       "total_value": 1030394.38,
       "cash": 670726.38,
       "market_value": 359668.0,
+      "position_count": 2
+    },
+    {
+      "date": "2026-09-21",
+      "total_value": 1031956.38,
+      "cash": 670726.38,
+      "market_value": 361230.0,
       "position_count": 2
     }
   ],
