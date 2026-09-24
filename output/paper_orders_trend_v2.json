@@ -180,5 +180,33 @@
     "created_at": "2026-08-10T10:43:05.465081",
     "updated_at": "2026-08-11T10:24:40.320461",
     "metadata": {}
+  },
+  {
+    "order_id": "c2947142bfc8e3fe0ac7",
+    "warehouse": "trend_v2",
+    "code": "600549",
+    "name": "厦门钨业",
+    "direction": "SELL",
+    "quantity": 5500,
+    "signal_trade_date": "2026-09-24",
+    "planned_trade_date": "2026-09-28",
+    "signal_reason": "硬止损 -20.2%",
+    "reference_close": 46.9,
+    "strategy": "trend_reversal",
+    "position_qty_at_signal": 5500,
+    "close_position": true,
+    "status": "PENDING",
+    "attempts": 0,
+    "last_block_reason": "",
+    "fill_trade_date": "",
+    "open_price": 0.0,
+    "fill_price": 0.0,
+    "fees": 0.0,
+    "gap_pct": 0.0,
+    "created_at": "2026-09-24T14:18:59.083029",
+    "updated_at": "2026-09-24T14:18:59.083029",
+    "metadata": {
+      "cooling": true
+    }
   }
 ]
