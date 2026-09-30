@@ -8,8 +8,16 @@
 - `../CLAUDE.md`：策略参数、开发约定和 AI 协作边界。
 - `INVESTOR_GUIDE.md`：投资者每天看什么、研究与订单如何区分、证据阶梯和实盘边界。
 - `CHANGES.md`：按日期记录已经落地的重要变更和未完成事项。
-- `rule-consistency-audit-2026-09-30.md`：当前双仓持仓规则、信号与虚拟订单闭环审计；用于判断系统执行问题与策略问题的边界。
-- `paper-position-action-list-2026-09-29.md`：按仓别和股票列出的最新持仓动作清单。
+- `decision-memo-2026-09-30.md`：2026-09-30 定位决定（C 变体）——终审不触发资金决策、真钱走独立卫星仓；是 CLAUDE.md 与 INVESTOR_GUIDE 现行实盘口径的依据。
+- `rule-consistency-audit-2026-09-30.md`：当前双仓持仓规则、信号与虚拟订单闭环审计；用于判断系统执行问题与策略问题的边界。其中指出的 config.yaml 旧版止损字段口径残留尚未清理。
+
+## 一次性快照（仅反映标注日期的状态，不随日更更新，不作为现行指导）
+
+- `paper-position-action-list-2026-09-29.md`：持仓动作清单（9-29 快照，最新可用版本）；9-22 版已被其取代。
+- `paper-position-action-list-2026-09-22.md`：持仓动作清单（9-22 快照，已过时）。
+- `current-paper-account-health-2026-09-22.md`：虚拟盘体检（9-22 快照）；其“不能进入实盘”结论早于 9-30 定位决定，现行口径以 `decision-memo-2026-09-30.md` 为准。
+- `opportunity-report-preview.md`：2026-09-28 日报“机会清单”栏目的一次性预览。
+- `research-update-2026-09-30-688111-002558.md`：9-30 对 688111/002558 两只持仓的优先研究更新。
 
 ## 历史材料
 
