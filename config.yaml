@@ -76,8 +76,6 @@ panic:
 # === 止损规则 ===
 stops:
   hard_stop: -0.20              # 硬止损：-20%（回测2020年华东医药触发，有效截断亏损；胜率17.6%下盈亏比10:1，靠少数大赢家覆盖多数小亏）
-  time_stop_months: 2           # 时间止损：持仓2个月无利润
-  time_stop_cut_ratio: 0.50     # 时间止损砍仓比例
   fundamental_stop_revenue: -0.20  # 基本面止损：营收同比降20%
   fundamental_stop_profit: -0.20   # 基本面止损：利润同比降20%
 
