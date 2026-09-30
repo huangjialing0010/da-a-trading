@@ -1,5 +1,5 @@
 {
-  "cash": 671049.5544272499,
+  "cash": 925912.95340975,
   "positions": {
     "600115": {
       "code": "600115",
@@ -7,14 +7,6 @@
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
       "current_price": 3.32,
-      "strategy": "trend_reversal"
-    },
-    "600549": {
-      "code": "600549",
-      "name": "厦门钨业",
-      "quantity": 5500,
-      "avg_cost": 58.803427182499995,
-      "current_price": 43.75,
       "strategy": "trend_reversal"
     },
     "601872": {
@@ -92,6 +84,16 @@
       "quantity": 900,
       "reason": "趋势入场: 利润改善+435.2pp, ROE=15.7% [paper_order:ccf16d4efc04f7e4bf43]",
       "pnl": 0.0
+    },
+    {
+      "time": "2026-09-28T09:30:00",
+      "code": "600549",
+      "name": "厦门钨业",
+      "direction": "SELL",
+      "price": 46.373580000000004,
+      "quantity": 5500,
+      "reason": "硬止损 -20.2% [paper_order:c2947142bfc8e3fe0ac7]",
+      "pnl": -68555.45052124996
     }
   ],
   "equity_snapshots": [
@@ -300,10 +302,10 @@
     },
     {
       "date": "2026-09-29",
-      "total_value": 1850496.55,
-      "cash": 671049.55,
-      "market_value": 1179447.0,
-      "position_count": 5
+      "total_value": 1864734.95,
+      "cash": 925912.95,
+      "market_value": 938822.0,
+      "position_count": 4
     }
   ],
   "created_at": "2026-08-07T16:35:53.783239"

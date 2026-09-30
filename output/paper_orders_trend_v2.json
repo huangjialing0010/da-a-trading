@@ -195,16 +195,16 @@
     "strategy": "trend_reversal",
     "position_qty_at_signal": 5500,
     "close_position": true,
-    "status": "PENDING",
-    "attempts": 0,
+    "status": "FILLED",
+    "attempts": 1,
     "last_block_reason": "",
-    "fill_trade_date": "",
-    "open_price": 0.0,
-    "fill_price": 0.0,
-    "fees": 0.0,
-    "gap_pct": 0.0,
+    "fill_trade_date": "2026-09-28",
+    "open_price": 46.42,
+    "fill_price": 46.373580000000004,
+    "fees": 191.291017,
+    "gap_pct": -0.010234541577825107,
     "created_at": "2026-09-24T14:18:59.083029",
-    "updated_at": "2026-09-24T14:18:59.083029",
+    "updated_at": "2026-09-30T14:58:22.628152",
     "metadata": {
       "cooling": true
     }
@@ -263,6 +263,145 @@
     "updated_at": "2026-09-30T12:10:04.987576",
     "metadata": {
       "cooling": false
+    }
+  },
+  {
+    "order_id": "3fb8c5a99f3d57ddc076",
+    "warehouse": "trend_v2",
+    "code": "300418",
+    "name": "昆仑万维",
+    "direction": "BUY",
+    "quantity": 4500,
+    "signal_trade_date": "2026-09-29",
+    "planned_trade_date": "2026-09-30",
+    "signal_reason": "趋势入场: 利润改善+347.0pp, ROE=7.9%",
+    "reference_close": 40.95,
+    "strategy": "trend_reversal",
+    "position_qty_at_signal": 0,
+    "close_position": false,
+    "status": "PENDING",
+    "attempts": 0,
+    "last_block_reason": "",
+    "fill_trade_date": "",
+    "open_price": 0.0,
+    "fill_price": 0.0,
+    "fees": 0.0,
+    "gap_pct": 0.0,
+    "created_at": "2026-09-30T14:58:22.993112",
+    "updated_at": "2026-09-30T14:58:22.993112",
+    "metadata": {
+      "selection_audit": {
+        "version": 1,
+        "sort_rule": "improvement_desc",
+        "selected_rank": 1,
+        "eligible_count": 8,
+        "selection_slots": 1,
+        "max_positions": 5,
+        "held_positions_at_signal": 4,
+        "pending_buys_at_signal": 0,
+        "sizing_basis": "20_percent_available_cash",
+        "available_cash_before_order": 925912.95,
+        "order_budget": 185182.59,
+        "account_value_at_signal": 1864734.95,
+        "ranked_eligible_candidates": [
+          {
+            "rank": 1,
+            "code": "300418",
+            "name": "昆仑万维",
+            "improvement_pp": 347.0,
+            "current_yoy_pct": 227.2,
+            "previous_yoy_pct": -119.9,
+            "roe_pct": 7.9,
+            "debt_ratio_pct": 23.6,
+            "report_date": "2026-06-30",
+            "reference_price": 40.95
+          },
+          {
+            "rank": 2,
+            "code": "000657",
+            "name": "中钨高新",
+            "improvement_pp": 264.3,
+            "current_yoy_pct": 280.5,
+            "previous_yoy_pct": 16.2,
+            "roe_pct": 19.3,
+            "debt_ratio_pct": 60.5,
+            "report_date": "2026-06-30",
+            "reference_price": 53.69
+          },
+          {
+            "rank": 3,
+            "code": "688012",
+            "name": "中微公司",
+            "improvement_pp": 263.6,
+            "current_yoy_pct": 300.2,
+            "previous_yoy_pct": 36.6,
+            "roe_pct": 11.6,
+            "debt_ratio_pct": 19.7,
+            "report_date": "2026-06-30",
+            "reference_price": 324.78
+          },
+          {
+            "rank": 4,
+            "code": "002384",
+            "name": "东山精密",
+            "improvement_pp": 254.9,
+            "current_yoy_pct": 290.1,
+            "previous_yoy_pct": 35.2,
+            "roe_pct": 12.9,
+            "debt_ratio_pct": 64.5,
+            "report_date": "2026-06-30",
+            "reference_price": 171.21
+          },
+          {
+            "rank": 5,
+            "code": "000977",
+            "name": "浪潮信息",
+            "improvement_pp": 234.7,
+            "current_yoy_pct": 269.6,
+            "previous_yoy_pct": 34.9,
+            "roe_pct": 12.7,
+            "debt_ratio_pct": 77.2,
+            "report_date": "2026-06-30",
+            "reference_price": 67.18
+          },
+          {
+            "rank": 6,
+            "code": "601628",
+            "name": "中国人寿",
+            "improvement_pp": 221.6,
+            "current_yoy_pct": 228.6,
+            "previous_yoy_pct": 6.9,
+            "roe_pct": 21.1,
+            "debt_ratio_pct": 91.6,
+            "report_date": "2026-06-30",
+            "reference_price": 36.62
+          },
+          {
+            "rank": 7,
+            "code": "600026",
+            "name": "中远海能",
+            "improvement_pp": 172.4,
+            "current_yoy_pct": 143.2,
+            "previous_yoy_pct": -29.2,
+            "roe_pct": 9.3,
+            "debt_ratio_pct": 49.0,
+            "report_date": "2026-06-30",
+            "reference_price": 20.27
+          },
+          {
+            "rank": 8,
+            "code": "300308",
+            "name": "中际旭创",
+            "improvement_pp": 172.3,
+            "current_yoy_pct": 241.7,
+            "previous_yoy_pct": 69.4,
+            "roe_pct": 37.6,
+            "debt_ratio_pct": 36.1,
+            "report_date": "2026-06-30",
+            "reference_price": 813.01
+          }
+        ]
+      }
     }
   }
 ]
