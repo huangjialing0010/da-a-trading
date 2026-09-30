@@ -30,7 +30,7 @@
       "name": "昆仑万维",
       "quantity": 4500,
       "avg_cost": 41.05126025,
-      "current_price": 41.041,
+      "current_price": 40.08,
       "strategy": "trend_reversal"
     }
   },
@@ -329,9 +329,9 @@
     },
     {
       "date": "2026-09-30",
-      "total_value": 1875160.6,
+      "total_value": 1870836.1,
       "cash": 921047.1,
-      "market_value": 954113.5,
+      "market_value": 949789.0,
       "position_count": 4
     }
   ],
