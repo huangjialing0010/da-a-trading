@@ -1,20 +1,12 @@
 {
-  "cash": 925912.95340975,
+  "cash": 921047.10241975,
   "positions": {
     "600115": {
       "code": "600115",
       "name": "中国东航",
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
-      "current_price": 3.32,
-      "strategy": "trend_reversal"
-    },
-    "601872": {
-      "code": "601872",
-      "name": "招商轮船",
-      "quantity": 9100,
-      "avg_cost": 17.90235447,
-      "current_price": 19.89,
+      "current_price": 3.4,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -22,7 +14,7 @@
       "name": "荣盛石化",
       "quantity": 15300,
       "avg_cost": 13.536903379999998,
-      "current_price": 13.25,
+      "current_price": 13.33,
       "strategy": "trend_reversal"
     },
     "688111": {
@@ -30,7 +22,15 @@
       "name": "金山办公",
       "quantity": 900,
       "avg_cost": 262.32756549999993,
-      "current_price": 216.9,
+      "current_price": 218.8,
+      "strategy": "trend_reversal"
+    },
+    "300418": {
+      "code": "300418",
+      "name": "昆仑万维",
+      "quantity": 4500,
+      "avg_cost": 41.05126025,
+      "current_price": 41.041,
       "strategy": "trend_reversal"
     }
   },
@@ -94,6 +94,26 @@
       "quantity": 5500,
       "reason": "硬止损 -20.2% [paper_order:c2947142bfc8e3fe0ac7]",
       "pnl": -68555.45052124996
+    },
+    {
+      "time": "2026-09-30T09:30:00",
+      "code": "601872",
+      "name": "招商轮船",
+      "direction": "SELL",
+      "price": 19.7802,
+      "quantity": 9100,
+      "reason": "移动止盈 回撤13.2% [paper_order:021fd142b27df93ca9de]",
+      "pnl": 16953.394458000024
+    },
+    {
+      "time": "2026-09-30T09:30:00",
+      "code": "300418",
+      "name": "昆仑万维",
+      "direction": "BUY",
+      "price": 41.041,
+      "quantity": 4500,
+      "reason": "趋势入场: 利润改善+347.0pp, ROE=7.9% [paper_order:3fb8c5a99f3d57ddc076]",
+      "pnl": 0.0
     }
   ],
   "equity_snapshots": [
@@ -305,6 +325,13 @@
       "total_value": 1864734.95,
       "cash": 925912.95,
       "market_value": 938822.0,
+      "position_count": 4
+    },
+    {
+      "date": "2026-09-30",
+      "total_value": 1875160.6,
+      "cash": 921047.1,
+      "market_value": 954113.5,
       "position_count": 4
     }
   ],
