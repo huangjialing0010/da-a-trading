@@ -1,20 +1,25 @@
 # 复盘报告索引
 
-自动生成于 2026-09-30 10:04。日报按天、周报/月报按周期归档；最新报告置顶。
+自动生成于 2026-09-30 14:49。日报按天、周报/月报按周期归档；最新报告置顶。
 
 ## 最新报告
 
 | 类型 | 报告 | 周期 |
 |------|------|------|
-| 日报 | [daily_20260930_corrected.md](daily_20260930_corrected.md) | 2026-09-30（数据一致版） |
-| 周报 | [weekly_20260918.md](weekly_20260918.md) | 2026-09-18 |
-| 趋势周报 | [trend_weekly_20260918.md](trend_weekly_20260918.md) | 2026-09-18 |
+| 日报 | [daily_20260930_corrected.md](daily_20260930_corrected.md) | daily_20260930_corrected |
+| 周报 | [weekly_20260925.md](weekly_20260925.md) | 2026-09-25 |
+| 趋势周报 | [trend_weekly_20260925.md](trend_weekly_20260925.md) | 2026-09-25 |
 | 月报 | [monthly_202608.md](monthly_202608.md) | 2026-08 |
 | 趋势月报 | [trend_monthly_202608.md](trend_monthly_202608.md) | 2026-08 |
 
 ## 日报
 
-- 2026-09-30 [daily_20260930_corrected.md](daily_20260930_corrected.md)（数据一致版）
+- daily_20260930_corrected [daily_20260930_corrected.md](daily_20260930_corrected.md)
+- 2026-09-30 [daily_20260930.md](daily_20260930.md)
+- 2026-09-25 [daily_20260925.md](daily_20260925.md)
+- 2026-09-24 [daily_20260924.md](daily_20260924.md)
+- 2026-09-23 [daily_20260923.md](daily_20260923.md)
+- 2026-09-22 [daily_20260922.md](daily_20260922.md)
 - 2026-09-21 [daily_20260921.md](daily_20260921.md)
 - 2026-09-18 [daily_20260918.md](daily_20260918.md)
 - 2026-09-17 [daily_20260917.md](daily_20260917.md)
@@ -67,6 +72,7 @@
 
 ## 周报
 
+- 2026-09-25 [weekly_20260925.md](weekly_20260925.md)
 - 2026-09-18 [weekly_20260918.md](weekly_20260918.md)
 - 2026-09-11 [weekly_20260911.md](weekly_20260911.md)
 - 2026-09-04 [weekly_20260904.md](weekly_20260904.md)
@@ -84,6 +90,7 @@
 
 ## 趋势周报
 
+- 2026-09-25 [trend_weekly_20260925.md](trend_weekly_20260925.md)
 - 2026-09-18 [trend_weekly_20260918.md](trend_weekly_20260918.md)
 - 2026-09-11 [trend_weekly_20260911.md](trend_weekly_20260911.md)
 - 2026-09-04 [trend_weekly_20260904.md](trend_weekly_20260904.md)
