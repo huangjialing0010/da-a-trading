@@ -181,13 +181,26 @@ def _financial_section(code: str) -> tuple[list[str], list[tuple[str, str]]]:
     return lines, src
 
 
-def _commodity_section(name: str) -> tuple[list[str], list[tuple[str, str]]]:
+# 已知强周期但商品映射表未覆盖的行业：简报不得静默跳过，须显式 MISSING（2026-09-30 600026 研究发现）
+CYCLICAL_UNMAPPED = {
+    "航运港口": "运价指数（BDTI/BCTI）——akshare 已有 macro_china_bdti_index / macro_shipping_bcti 接口，待接入后自动计算分位",
+    "保险Ⅱ": "权益市场beta（利润由投资收益驱动，非商品周期）",
+    "证券Ⅱ": "权益市场beta（利润由投资收益驱动，非商品周期）",
+}
+
+
+def _commodity_section(name: str, industry: str = "") -> tuple[list[str], list[tuple[str, str]]]:
     src = ["`data/market/commodity_*.json`（商品期货缓存）"]
     try:
         cycle = check_commodity_cycle(name)
     except Exception as exc:
         return [f"- 商品周期：**MISSING**（检测异常：{exc}）"], src
     if not cycle:
+        cyc = CYCLICAL_UNMAPPED.get(industry)
+        if cyc:
+            return ([f"- 商品周期：**MISSING**——{name} 属强周期行业（{industry}），"
+                     f"商品映射表未覆盖（{cyc}）。禁止静默跳过：外部核实周期分位前，"
+                     f"利润高增一律按周期顶风险对待"], src)
         return [f"- 商品周期：{name} 所属行业无对应商品映射，跳过检测"], src
     pct = cycle.get("pct")
     sym = cycle.get("commodity", "?")
@@ -266,7 +279,7 @@ def main() -> int:
     out.append("")
 
     if name != "MISSING":
-        com_lines, com_src = _commodity_section(name)
+        com_lines, com_src = _commodity_section(name, ind.get("level2_name", ""))
     else:
         com_lines, com_src = ["- 商品周期：**MISSING**（股票名缺失，无法匹配商品）"], []
     out.append("## 商品周期")
