@@ -48,7 +48,9 @@ class MarketWaterFreshnessTest(unittest.TestCase):
     def test_bond_fetch_uses_recent_range_and_saves_source_date(self):
         with tempfile.TemporaryDirectory() as tmp:
             market_dir = Path(tmp)
-            today = date.today()
+            # 实现侧用北京时间推导 end_date，测试期望必须用同一时钟源，
+            # 否则 Actions 在 UTC 16:00 后执行时（北京已是次日）断言必然失败
+            today = data_fetcher._now_shanghai().date()
             captured = {}
 
             def fake_bond_yield(**kwargs):
