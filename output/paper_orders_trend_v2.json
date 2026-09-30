@@ -180,5 +180,61 @@
     "created_at": "2026-08-10T10:43:05.465081",
     "updated_at": "2026-08-11T10:24:40.320461",
     "metadata": {}
+  },
+  {
+    "order_id": "d8a112b70ff359f9733f",
+    "warehouse": "trend_v2",
+    "code": "600549",
+    "name": "厦门钨业",
+    "direction": "SELL",
+    "quantity": 5500,
+    "signal_trade_date": "2026-09-29",
+    "planned_trade_date": "2026-09-30",
+    "signal_reason": "硬止损 -25.6%",
+    "reference_close": 43.75,
+    "strategy": "trend_reversal",
+    "position_qty_at_signal": 5500,
+    "close_position": true,
+    "status": "PENDING",
+    "attempts": 0,
+    "last_block_reason": "",
+    "fill_trade_date": "",
+    "open_price": 0.0,
+    "fill_price": 0.0,
+    "fees": 0.0,
+    "gap_pct": 0.0,
+    "created_at": "2026-09-30T12:10:04.967069",
+    "updated_at": "2026-09-30T12:10:04.967069",
+    "metadata": {
+      "cooling": true
+    }
+  },
+  {
+    "order_id": "021fd142b27df93ca9de",
+    "warehouse": "trend_v2",
+    "code": "601872",
+    "name": "招商轮船",
+    "direction": "SELL",
+    "quantity": 9100,
+    "signal_trade_date": "2026-09-29",
+    "planned_trade_date": "2026-09-30",
+    "signal_reason": "移动止盈 回撤13.2%",
+    "reference_close": 19.89,
+    "strategy": "trend_reversal",
+    "position_qty_at_signal": 9100,
+    "close_position": true,
+    "status": "PENDING",
+    "attempts": 0,
+    "last_block_reason": "",
+    "fill_trade_date": "",
+    "open_price": 0.0,
+    "fill_price": 0.0,
+    "fees": 0.0,
+    "gap_pct": 0.0,
+    "created_at": "2026-09-30T12:10:04.987576",
+    "updated_at": "2026-09-30T12:10:04.987576",
+    "metadata": {
+      "cooling": false
+    }
   }
 ]

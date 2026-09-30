@@ -68,6 +68,14 @@ def to_markdown(report_text: str) -> str:
             i += 1
             continue
 
+        if s.startswith("[深价候选] 当前候选"):
+            out.append("- 深价当前候选：" + s.split(":", 1)[1].strip())
+            i += 1
+            continue
+        if s.startswith("[趋势候选] 当前候选"):
+            out.append("- 趋势当前候选：" + s.split(":", 1)[1].strip())
+            i += 1
+            continue
         if s.startswith("[深价候选] 新票"):
             out.append("- 深价候选新票：" + s.split(":", 1)[1].strip())
             i += 1

@@ -8,6 +8,8 @@
 - `../CLAUDE.md`：策略参数、开发约定和 AI 协作边界。
 - `INVESTOR_GUIDE.md`：投资者每天看什么、研究与订单如何区分、证据阶梯和实盘边界。
 - `CHANGES.md`：按日期记录已经落地的重要变更和未完成事项。
+- `rule-consistency-audit-2026-09-30.md`：当前双仓持仓规则、信号与虚拟订单闭环审计；用于判断系统执行问题与策略问题的边界。
+- `paper-position-action-list-2026-09-29.md`：按仓别和股票列出的最新持仓动作清单。
 
 ## 历史材料
 
@@ -30,6 +32,8 @@
 | `superpowers/specs/2026-08-07-minimal-deep-entry-design.md` | 已实施 | 最小结构化建议可生成普通深价 T+1 虚拟首仓订单；完整五问平台暂缓 |
 | `superpowers/specs/2026-08-07-p0-runtime-reliability-design.md` | 已实施 | GBK输出、研究队列文案与深价语义幂等 |
 | `superpowers/specs/2026-08-26-market-water-freshness-design.md` | 已实施 | 市场水位来源日期、ERP失败关闭与历史防污染 |
+| `../tools/backtest_data_gate.py` | 已实施 | 点时回测准入检查；缺少历史股票池封存时标记 `INSUFFICIENT`，禁止收益排名 |
+| `superpowers/specs/2026-09-29-point-in-time-universe-design.md` | 数据建设中 | 历史沪深300成分区间格式、准入条件和当前缺口 |
 
 ## 维护规则
 

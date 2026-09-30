@@ -48,6 +48,7 @@ BATCH_STATE_FILE = OUTPUT_DIR / "batch_state.json"
 PANIC_STATE_FILE = OUTPUT_DIR / "panic_state.json"
 TREND_COOLING_OFF_FILE = OUTPUT_DIR / "trend_cooling_off_v2.json"
 COOLING_OFF_DAYS = 20  # 止损后冷却交易日数，防止卖出后立即买回
+TREND_MAX_POSITIONS = 5
 
 # K线内存缓存：同一脚本内同一代码只拉一次网络
 _kline_cache: dict[str, "pd.DataFrame"] = {}
@@ -633,9 +634,35 @@ def _morning_brief_text(
         if account is None:
             return f"{label}状态不可用"
         state = account.state
+        total_value = float(getattr(state, "total_value", 0) or 0)
+        cash = float(getattr(state, "cash", 0) or 0)
+        market_value = float(
+            getattr(state, "total_market_value", total_value - cash) or 0
+        )
+        invested_pct = market_value / total_value if total_value > 0 else 0.0
+        cash_pct = cash / total_value if total_value > 0 else 0.0
         return (
-            f"{label}总资产{state.total_value:,.0f}元、现金{state.cash:,.0f}元、"
-            f"持仓浮盈亏{state.total_pnl:+,.0f}元"
+            f"{label}总资产{total_value:,.0f}元、现金{cash:,.0f}元、"
+            f"持仓浮盈亏{state.total_pnl:+,.0f}元、持仓占比{invested_pct:.1%}、"
+            f"现金占比{cash_pct:.1%}"
+        )
+
+    def trend_capacity_text(
+            account: VirtualAccount | None,
+            book: PaperOrderBook | None) -> str:
+        if account is None or book is None:
+            return "趋势 V2 名额状态不可用"
+        state = account.state
+        positions = getattr(state, "position_count", None)
+        if positions is None:
+            return "趋势 V2 名额状态不可用"
+        pending_buys = sum(
+            1 for order in book.active_orders() if order.direction == "BUY"
+        )
+        return (
+            f"趋势 V2 名额：持仓{int(positions)}只 + 待买{pending_buys}只 / "
+            f"{TREND_MAX_POSITIONS}只；"
+            "单笔规模按下单时可用现金的20%计算"
         )
 
     def order_text(book: PaperOrderBook | None) -> str:
@@ -682,6 +709,7 @@ def _morning_brief_text(
         f"  数据：报告交易日{report_date} | 深价行情截至{deep_data_date}",
         f"  账户：{account_text('深价仓', deep_account)}",
         f"  账户：{account_text('趋势 V2（仅虚拟盘）', trend_account)}",
+        f"  {trend_capacity_text(trend_account, trend_order_book)}",
         f"  深价动作：{deep_action}",
         f"  趋势 V2 动作（仅虚拟盘）：{order_text(trend_order_book)}",
     ]
@@ -1074,7 +1102,7 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
     held_codes = set(acc.get_holding_codes())
     held_codes.update(order_book.active_buy_codes())
     held_codes.update(cooling_off.keys())  # 冷却中的股票等同已持有，不买入
-    max_positions = 5
+    max_positions = TREND_MAX_POSITIONS
     pending_buys = len(order_book.active_buy_codes())
     signal_batch_locked = order_book.has_signal_batch(expected_date, "BUY")
     entry_slots = (
@@ -1137,17 +1165,46 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
                 funnel["commodity_high"] += 1
                 continue  # 商品周期高位，利润改善可能是周期驱动
 
+            report_date = r.get("report_date", "")
+            if pd.isna(report_date):
+                report_date = ""
             viable.append({
                 "code": code, "name": str(r["name"]),
                 "price": price_now,
                 "improvement": imp,
+                "current_yoy": cur_yoy,
+                "previous_yoy": float(r.get("prev_yoy", 0) or 0),
                 "roe": roe,
+                "debt_ratio": debt,
+                "report_date": str(report_date),
             })
             funnel["viable"] += 1
 
         # 按改善幅度排序，取前N
         viable.sort(key=lambda x: x["improvement"], reverse=True)
-        for v in viable[:slots]:
+        def audit_number(value):
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError):
+                return None
+            return parsed if pd.notna(parsed) else None
+
+        ranked_snapshot = [
+            {
+                "rank": rank,
+                "code": item["code"],
+                "name": item["name"],
+                "improvement_pp": audit_number(item["improvement"]),
+                "current_yoy_pct": audit_number(item["current_yoy"]),
+                "previous_yoy_pct": audit_number(item["previous_yoy"]),
+                "roe_pct": audit_number(item["roe"]),
+                "debt_ratio_pct": audit_number(item["debt_ratio"]),
+                "report_date": item["report_date"],
+                "reference_price": audit_number(item["price"]),
+            }
+            for rank, item in enumerate(viable, start=1)
+        ]
+        for rank, v in enumerate(viable[:slots], start=1):
             # 仓位计算
             available_cash = max(0.0, acc.state.cash - order_book.reserved_cash())
             single_max = available_cash * 0.20
@@ -1163,6 +1220,23 @@ def trend_daily_update(calendar_info: dict | None = None) -> str:
                     signal_trade_date=expected_date, planned_trade_date=planned_date,
                     signal_reason=reason, reference_close=v["price"],
                     strategy="trend_reversal", position_qty_at_signal=0,
+                    metadata={
+                        "selection_audit": {
+                            "version": 1,
+                            "sort_rule": "improvement_desc",
+                            "selected_rank": rank,
+                            "eligible_count": len(viable),
+                            "selection_slots": slots,
+                            "max_positions": max_positions,
+                            "held_positions_at_signal": len(acc.get_holdings()),
+                            "pending_buys_at_signal": pending_buys,
+                            "sizing_basis": "20_percent_available_cash",
+                            "available_cash_before_order": round(available_cash, 2),
+                            "order_budget": round(single_max, 2),
+                            "account_value_at_signal": round(acc.state.total_value, 2),
+                            "ranked_eligible_candidates": ranked_snapshot,
+                        }
+                    },
                 )
                 if created:
                     lines.append(f"  [买入挂单] {v['name']}：{planned_date} 开盘 {qty}股")
@@ -1901,7 +1975,7 @@ def daily_update() -> str:
             dv_new = [f"{str(r['code']).zfill(6)} {r['name']}" for _, r in dv_df.iterrows()
                       if str(r['code']).zfill(6) not in held]
             if dv_new:
-                lines.append(f"[深价候选] 新票: {', '.join(dv_new[:5])}")
+                lines.append(f"[深价候选] 当前候选: {', '.join(dv_new[:5])}")
 
             trend_file = OUTPUT_DIR / "trend_candidates.csv"
             if trend_file.exists():
@@ -1909,7 +1983,7 @@ def daily_update() -> str:
                 tr_new = [f"{str(r['code']).zfill(6)} {r['name']}" for _, r in tr_df.iterrows()
                           if str(r['code']).zfill(6) not in held]
                 if tr_new:
-                    lines.append(f"[趋势候选] 新票: {', '.join(tr_new[:5])}")
+                    lines.append(f"[趋势候选] 当前候选: {', '.join(tr_new[:5])}")
                 both = [f"{str(r['code']).zfill(6)} {r['name']}" for _, r in tr_df.iterrows()
                         if str(r['code']).zfill(6) in held]
                 if both:
@@ -2190,6 +2264,12 @@ def daily_update() -> str:
         lines.insert(1, morning_brief)
     except Exception as e:
         lines.insert(1, f"\n═══ 投资者行动卡（次日开盘前） ═══\n  生成失败: {e}")
+
+    try:
+        from .opportunity_report import build_opportunity_report
+        lines.insert(2, build_opportunity_report(OUTPUT_DIR, expected_date or today.isoformat()))
+    except Exception as exc:
+        lines.insert(2, f"\n[机会清单] 不可用：{exc}")
 
     report = "\n".join(lines)
 

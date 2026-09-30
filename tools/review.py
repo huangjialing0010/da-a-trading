@@ -138,11 +138,11 @@ def _combined_overview_section() -> list:
             bench_ret = None
 
     if mdd_combo < min(mdd_deep, mdd_trend) - 1e-9:
-        dd_verdict = "低于两个单策略，分散有效"
+        dd_verdict = "低于两策略各自的样本期最大回撤"
     elif mdd_combo < max(mdd_deep, mdd_trend) - 1e-9:
-        dd_verdict = "介于两策略之间，降低了趋势仓尾部风险"
+        dd_verdict = "介于两策略各自的样本期结果之间"
     else:
-        dd_verdict = "不低于单策略，当前样本下分散未体现"
+        dd_verdict = "不低于较低回撤单策略的样本期结果"
 
     if vol_combo < min(vol_deep, vol_trend) - 1e-9:
         vol_verdict = f"年化波动率 {vol_combo:.1%} 低于两个单策略"
@@ -172,6 +172,9 @@ def _combined_overview_section() -> list:
     lines.append(
         f"> 结论：组合最大回撤 -{mdd_combo:.2%}（深价 -{mdd_deep:.2%} / 趋势 -{mdd_trend:.2%}），"
         f"{dd_verdict}；{vol_verdict}{corr_str}。"
+    )
+    lines.append(
+        "> 风险说明：最大回撤仅描述当前共同样本期，不代表未来尾部风险必然下降。"
     )
     lines.append(
         "> 口径说明：沪深300累计按 `data/market/benchmark_000300.csv` close 计算；"
@@ -234,6 +237,14 @@ def weekly_review(acc: VirtualAccount = None) -> str:
     lines.append(f"| 本周收益率 | {weekly_return:+.2%} |")
     lines.append(f"| 现金 | {acc.state.cash:,.0f} |")
     lines.append(f"| 持仓市值 | {acc.state.total_market_value:,.0f} |")
+    lines.append(
+        f"| 持仓市值占比 | {acc.state.total_market_value / total:.1%} |"
+        if total > 0 else "| 持仓市值占比 | 不可计算 |"
+    )
+    lines.append(
+        f"| 现金占比 | {acc.state.cash / total:.1%} |" if total > 0
+        else "| 现金占比 | 不可计算 |"
+    )
     lines.append(f"| 持仓数量 | {acc.state.position_count} |")
     lines.append("")
 
@@ -578,6 +589,14 @@ def trend_weekly_review() -> str:
     lines.append(f"| 本周收益率 | {weekly_return:+.2%} |")
     lines.append(f"| 现金 | {acc.state.cash:,.0f} |")
     lines.append(f"| 持仓市值 | {acc.state.total_market_value:,.0f} |")
+    lines.append(
+        f"| 持仓市值占比 | {acc.state.total_market_value / total:.1%} |"
+        if total > 0 else "| 持仓市值占比 | 不可计算 |"
+    )
+    lines.append(
+        f"| 现金占比 | {acc.state.cash / total:.1%} |"
+        if total > 0 else "| 现金占比 | 不可计算 |"
+    )
     lines.append(f"| 持仓数量 | {acc.state.position_count} |")
     lines.append("")
 

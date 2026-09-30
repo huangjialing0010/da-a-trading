@@ -83,7 +83,15 @@ def screen_deep_value(config: dict, n: int = 30, max_check: int | None = None,
     except EarningsAlertError as exc:
         print(f"[screener] 重大业绩警示不可用，深价候选失败关闭: {exc}")
         return []
-    universe = fetch_stock_universe()
+    # 候选扫描不在日更主流程中长时间等待成分接口；缓存过期就冻结，
+    # 由独立的数据刷新任务更新后再重试。
+    universe_cache = BASE_DIR / "data" / "market" / "stock_universe.csv"
+    if not universe_cache.exists():
+        raise RuntimeError("沪深300股票池缓存不存在，趋势候选刷新冻结")
+    cache_age_days = (datetime.now() - datetime.fromtimestamp(universe_cache.stat().st_mtime)).total_seconds() / 86400
+    if cache_age_days > 7:
+        raise RuntimeError(f"沪深300股票池缓存已过期{cache_age_days:.1f}天，趋势候选刷新冻结")
+    universe = fetch_stock_universe(ttl_days=7)
 
     if universe.empty:
         print("[screener] 无法获取股票池")
@@ -530,7 +538,7 @@ def _select_trend_candidates(results: list[dict], n: int = 10) -> tuple[list[dic
     funnel["eligible"] = len(eligible)
     return eligible[:n], funnel
 
-def scan_trend_improvement(n: int = 10) -> list[dict]:
+def scan_trend_improvement(n: int = 10, max_seconds: int = 180) -> list[dict]:
     """扫描同报告期利润YoY改善最多的股票。
     取最新报告期的同月份历史数据，比较利润YoY变化幅度。
     输出到 trend_candidates.csv，仅供人工审查，不触发自动交易。
@@ -547,11 +555,14 @@ def scan_trend_improvement(n: int = 10) -> list[dict]:
     if universe.empty:
         raise RuntimeError("沪深300股票池不可用，趋势候选刷新冻结")
     results = []
+    deadline = time.monotonic() + max_seconds
 
     total = min(len(universe), dv.get("universe_top_n", 70))
     print(f"[trend_scan] 扫描 {total} 只...")
 
     for i, (_, row) in enumerate(universe.head(total).iterrows()):
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"趋势候选扫描超过{max_seconds}秒，已冻结候选刷新")
         code = str(row["code"]).zfill(6)
         name = str(row["name"])
         if "ST" in name:
