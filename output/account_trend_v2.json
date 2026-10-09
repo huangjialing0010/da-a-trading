@@ -6,7 +6,7 @@
       "name": "中国东航",
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
-      "current_price": 3.26,
+      "current_price": 3.3,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -14,7 +14,7 @@
       "name": "荣盛石化",
       "quantity": 15300,
       "avg_cost": 13.536903379999998,
-      "current_price": 13.49,
+      "current_price": 13.2,
       "strategy": "trend_reversal"
     },
     "688111": {
@@ -22,7 +22,7 @@
       "name": "金山办公",
       "quantity": 900,
       "avg_cost": 262.32756549999993,
-      "current_price": 218.99,
+      "current_price": 228.95,
       "strategy": "trend_reversal"
     },
     "300418": {
@@ -30,7 +30,7 @@
       "name": "昆仑万维",
       "quantity": 4500,
       "avg_cost": 41.05126025,
-      "current_price": 38.36,
+      "current_price": 41.15,
       "strategy": "trend_reversal"
     },
     "688012": {
@@ -38,7 +38,7 @@
       "name": "中微公司",
       "quantity": 500,
       "avg_cost": 321.701705325,
-      "current_price": 321.62129999999996,
+      "current_price": 311.0,
       "strategy": "trend_reversal"
     }
   },
@@ -357,6 +357,13 @@
       "total_value": 1850498.9,
       "cash": 760196.25,
       "market_value": 1090302.65,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-09",
+      "total_value": 1866606.25,
+      "cash": 760196.25,
+      "market_value": 1106410.0,
       "position_count": 5
     }
   ],
