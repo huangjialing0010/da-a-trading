@@ -14,7 +14,7 @@
       "name": "巨人网络",
       "quantity": 8600,
       "avg_cost": 26.499495759069767,
-      "current_price": 22.72,
+      "current_price": 22.41,
       "strategy": "deep_value"
     }
   },
@@ -529,6 +529,13 @@
       "total_value": 1024728.38,
       "cash": 670726.38,
       "market_value": 354002.0,
+      "position_count": 2
+    },
+    {
+      "date": "2026-10-13",
+      "total_value": 1022062.38,
+      "cash": 670726.38,
+      "market_value": 351336.0,
       "position_count": 2
     }
   ],
