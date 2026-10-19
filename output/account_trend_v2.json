@@ -14,7 +14,7 @@
       "name": "荣盛石化",
       "quantity": 15300,
       "avg_cost": 13.536903379999998,
-      "current_price": 11.53,
+      "current_price": 11.65,
       "strategy": "trend_reversal"
     },
     "688111": {
@@ -22,7 +22,7 @@
       "name": "金山办公",
       "quantity": 900,
       "avg_cost": 262.32756549999993,
-      "current_price": 231.44,
+      "current_price": 231.85,
       "strategy": "trend_reversal"
     },
     "300418": {
@@ -30,7 +30,7 @@
       "name": "昆仑万维",
       "quantity": 4500,
       "avg_cost": 41.05126025,
-      "current_price": 39.98,
+      "current_price": 39.17,
       "strategy": "trend_reversal"
     },
     "688012": {
@@ -38,7 +38,7 @@
       "name": "中微公司",
       "quantity": 500,
       "avg_cost": 321.701705325,
-      "current_price": 295.22,
+      "current_price": 277.27,
       "strategy": "trend_reversal"
     }
   },
@@ -399,6 +399,13 @@
       "total_value": 1814965.25,
       "cash": 760196.25,
       "market_value": 1054769.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-19",
+      "total_value": 1804550.25,
+      "cash": 760196.25,
+      "market_value": 1044354.0,
       "position_count": 5
     }
   ],
