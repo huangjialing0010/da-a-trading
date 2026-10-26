@@ -530,5 +530,33 @@
         ]
       }
     }
+  },
+  {
+    "order_id": "a834a9488ca751a606b4",
+    "warehouse": "trend_v2",
+    "code": "688012",
+    "name": "中微公司",
+    "direction": "SELL",
+    "quantity": 500,
+    "signal_trade_date": "2026-10-26",
+    "planned_trade_date": "2026-10-27",
+    "signal_reason": "硬止损 -21.8%",
+    "reference_close": 251.55,
+    "strategy": "trend_reversal",
+    "position_qty_at_signal": 500,
+    "close_position": true,
+    "status": "PENDING",
+    "attempts": 0,
+    "last_block_reason": "",
+    "fill_trade_date": "",
+    "open_price": 0.0,
+    "fill_price": 0.0,
+    "fees": 0.0,
+    "gap_pct": 0.0,
+    "created_at": "2026-10-26T16:15:38.199204",
+    "updated_at": "2026-10-26T16:15:38.199204",
+    "metadata": {
+      "cooling": true
+    }
   }
 ]
