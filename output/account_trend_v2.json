@@ -1,12 +1,12 @@
 {
-  "cash": 760196.24975725,
+  "cash": 887473.2203822499,
   "positions": {
     "600115": {
       "code": "600115",
       "name": "中国东航",
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
-      "current_price": 3.23,
+      "current_price": 3.2,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -14,7 +14,7 @@
       "name": "荣盛石化",
       "quantity": 15300,
       "avg_cost": 13.536903379999998,
-      "current_price": 11.71,
+      "current_price": 11.66,
       "strategy": "trend_reversal"
     },
     "688111": {
@@ -22,7 +22,7 @@
       "name": "金山办公",
       "quantity": 900,
       "avg_cost": 262.32756549999993,
-      "current_price": 252.57,
+      "current_price": 244.48,
       "strategy": "trend_reversal"
     },
     "300418": {
@@ -30,15 +30,7 @@
       "name": "昆仑万维",
       "quantity": 4500,
       "avg_cost": 41.05126025,
-      "current_price": 39.95,
-      "strategy": "trend_reversal"
-    },
-    "688012": {
-      "code": "688012",
-      "name": "中微公司",
-      "quantity": 500,
-      "avg_cost": 321.701705325,
-      "current_price": 251.55,
+      "current_price": 39.19,
       "strategy": "trend_reversal"
     }
   },
@@ -132,6 +124,16 @@
       "quantity": 500,
       "reason": "趋势入场: 利润改善+263.6pp, ROE=11.6% [paper_order:ee3b171be16da723bbb4]",
       "pnl": 0.0
+    },
+    {
+      "time": "2026-10-27T09:30:00",
+      "code": "688012",
+      "name": "中微公司",
+      "direction": "SELL",
+      "price": 254.745,
+      "quantity": 500,
+      "reason": "硬止损 -21.8% [paper_order:a834a9488ca751a606b4]",
+      "pnl": -33573.88203749999
     }
   ],
   "equity_snapshots": [
@@ -442,6 +444,13 @@
       "cash": 760196.25,
       "market_value": 1062158.0,
       "position_count": 5
+    },
+    {
+      "date": "2026-10-27",
+      "total_value": 1809138.22,
+      "cash": 887473.22,
+      "market_value": 921665.0,
+      "position_count": 4
     }
   ],
   "created_at": "2026-08-07T16:35:53.783239"
