@@ -573,16 +573,16 @@
     "strategy": "trend_reversal",
     "position_qty_at_signal": 0,
     "close_position": false,
-    "status": "PENDING",
-    "attempts": 0,
+    "status": "FILLED",
+    "attempts": 1,
     "last_block_reason": "",
-    "fill_trade_date": "",
-    "open_price": 0.0,
-    "fill_price": 0.0,
-    "fees": 0.0,
-    "gap_pct": 0.0,
+    "fill_trade_date": "2026-10-28",
+    "open_price": 39.59,
+    "fill_price": 39.62959,
+    "fees": 44.583289,
+    "gap_pct": 0.017999485728979137,
     "created_at": "2026-10-27T15:29:44.915390",
-    "updated_at": "2026-10-27T15:29:44.915390",
+    "updated_at": "2026-10-28T16:12:43.509559",
     "metadata": {
       "selection_audit": {
         "version": 1,
@@ -684,6 +684,34 @@
           }
         ]
       }
+    }
+  },
+  {
+    "order_id": "552bc5bf47b7fefa33f7",
+    "warehouse": "trend_v2",
+    "code": "000657",
+    "name": "中钨高新",
+    "direction": "SELL",
+    "quantity": 4500,
+    "signal_trade_date": "2026-10-28",
+    "planned_trade_date": "2026-10-29",
+    "signal_reason": "移动止盈 回撤33.0%",
+    "reference_close": 39.62959,
+    "strategy": "trend_reversal",
+    "position_qty_at_signal": 4500,
+    "close_position": true,
+    "status": "PENDING",
+    "attempts": 0,
+    "last_block_reason": "",
+    "fill_trade_date": "",
+    "open_price": 0.0,
+    "fill_price": 0.0,
+    "fees": 0.0,
+    "gap_pct": 0.0,
+    "created_at": "2026-10-28T16:12:43.527998",
+    "updated_at": "2026-10-28T16:12:43.527998",
+    "metadata": {
+      "cooling": false
     }
   }
 ]
