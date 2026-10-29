@@ -1,12 +1,12 @@
 {
-  "cash": 709095.4820935,
+  "cash": 887432.978581,
   "positions": {
     "600115": {
       "code": "600115",
       "name": "中国东航",
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
-      "current_price": 3.21,
+      "current_price": 3.24,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -14,7 +14,7 @@
       "name": "荣盛石化",
       "quantity": 15300,
       "avg_cost": 13.536903379999998,
-      "current_price": 11.77,
+      "current_price": 12.11,
       "strategy": "trend_reversal"
     },
     "688111": {
@@ -22,7 +22,7 @@
       "name": "金山办公",
       "quantity": 900,
       "avg_cost": 262.32756549999993,
-      "current_price": 223.08,
+      "current_price": 224.0,
       "strategy": "trend_reversal"
     },
     "300418": {
@@ -30,15 +30,7 @@
       "name": "昆仑万维",
       "quantity": 4500,
       "avg_cost": 41.05126025,
-      "current_price": 39.97,
-      "strategy": "trend_reversal"
-    },
-    "000657": {
-      "code": "000657",
-      "name": "中钨高新",
-      "quantity": 4500,
-      "avg_cost": 39.6394973975,
-      "current_price": 39.62959,
+      "current_price": 38.0,
       "strategy": "trend_reversal"
     }
   },
@@ -152,6 +144,16 @@
       "quantity": 4500,
       "reason": "趋势入场: 利润改善+264.3pp, ROE=19.3% [paper_order:d06df49cd7b3fddcb657]",
       "pnl": 0.0
+    },
+    {
+      "time": "2026-10-29T09:30:00",
+      "code": "000657",
+      "name": "中钨高新",
+      "direction": "SELL",
+      "price": 39.6603,
+      "quantity": 4500,
+      "reason": "移动止盈 回撤33.0% [paper_order:552bc5bf47b7fefa33f7]",
+      "pnl": -40.24180124999839
     }
   ],
   "equity_snapshots": [
@@ -476,6 +478,13 @@
       "cash": 709095.48,
       "market_value": 1087015.16,
       "position_count": 5
+    },
+    {
+      "date": "2026-10-29",
+      "total_value": 1796531.98,
+      "cash": 887432.98,
+      "market_value": 909099.0,
+      "position_count": 4
     }
   ],
   "created_at": "2026-08-07T16:35:53.783239"
