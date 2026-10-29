@@ -1,12 +1,12 @@
 {
-  "cash": 921047.10241975,
+  "cash": 709095.4820935,
   "positions": {
     "600115": {
       "code": "600115",
       "name": "中国东航",
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
-      "current_price": 3.4,
+      "current_price": 3.21,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -14,7 +14,7 @@
       "name": "荣盛石化",
       "quantity": 15300,
       "avg_cost": 13.536903379999998,
-      "current_price": 13.33,
+      "current_price": 11.77,
       "strategy": "trend_reversal"
     },
     "688111": {
@@ -22,7 +22,7 @@
       "name": "金山办公",
       "quantity": 900,
       "avg_cost": 262.32756549999993,
-      "current_price": 218.8,
+      "current_price": 223.08,
       "strategy": "trend_reversal"
     },
     "300418": {
@@ -30,7 +30,15 @@
       "name": "昆仑万维",
       "quantity": 4500,
       "avg_cost": 41.05126025,
-      "current_price": 40.08,
+      "current_price": 39.97,
+      "strategy": "trend_reversal"
+    },
+    "000657": {
+      "code": "000657",
+      "name": "中钨高新",
+      "quantity": 4500,
+      "avg_cost": 39.6394973975,
+      "current_price": 39.62959,
       "strategy": "trend_reversal"
     }
   },
@@ -113,6 +121,36 @@
       "price": 41.041,
       "quantity": 4500,
       "reason": "趋势入场: 利润改善+347.0pp, ROE=7.9% [paper_order:3fb8c5a99f3d57ddc076]",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-10-08T09:30:00",
+      "code": "688012",
+      "name": "中微公司",
+      "direction": "BUY",
+      "price": 321.62129999999996,
+      "quantity": 500,
+      "reason": "趋势入场: 利润改善+263.6pp, ROE=11.6% [paper_order:ee3b171be16da723bbb4]",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-10-27T09:30:00",
+      "code": "688012",
+      "name": "中微公司",
+      "direction": "SELL",
+      "price": 254.745,
+      "quantity": 500,
+      "reason": "硬止损 -21.8% [paper_order:a834a9488ca751a606b4]",
+      "pnl": -33573.88203749999
+    },
+    {
+      "time": "2026-10-28T09:30:00",
+      "code": "000657",
+      "name": "中钨高新",
+      "direction": "BUY",
+      "price": 39.62959,
+      "quantity": 4500,
+      "reason": "趋势入场: 利润改善+264.3pp, ROE=19.3% [paper_order:d06df49cd7b3fddcb657]",
       "pnl": 0.0
     }
   ],
@@ -333,6 +371,111 @@
       "cash": 921047.1,
       "market_value": 949789.0,
       "position_count": 4
+    },
+    {
+      "date": "2026-10-08",
+      "total_value": 1850498.9,
+      "cash": 760196.25,
+      "market_value": 1090302.65,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-09",
+      "total_value": 1866606.25,
+      "cash": 760196.25,
+      "market_value": 1106410.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-12",
+      "total_value": 1856245.25,
+      "cash": 760196.25,
+      "market_value": 1096049.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-13",
+      "total_value": 1847732.25,
+      "cash": 760196.25,
+      "market_value": 1087536.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-14",
+      "total_value": 1832936.25,
+      "cash": 760196.25,
+      "market_value": 1072740.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-15",
+      "total_value": 1823675.25,
+      "cash": 760196.25,
+      "market_value": 1063479.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-16",
+      "total_value": 1814965.25,
+      "cash": 760196.25,
+      "market_value": 1054769.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-19",
+      "total_value": 1804550.25,
+      "cash": 760196.25,
+      "market_value": 1044354.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-20",
+      "total_value": 1801982.25,
+      "cash": 760196.25,
+      "market_value": 1041786.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-21",
+      "total_value": 1807160.25,
+      "cash": 760196.25,
+      "market_value": 1046964.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-22",
+      "total_value": 1787467.25,
+      "cash": 760196.25,
+      "market_value": 1027271.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-23",
+      "total_value": 1823316.25,
+      "cash": 760196.25,
+      "market_value": 1063120.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-26",
+      "total_value": 1822354.25,
+      "cash": 760196.25,
+      "market_value": 1062158.0,
+      "position_count": 5
+    },
+    {
+      "date": "2026-10-27",
+      "total_value": 1809138.22,
+      "cash": 887473.22,
+      "market_value": 921665.0,
+      "position_count": 4
+    },
+    {
+      "date": "2026-10-28",
+      "total_value": 1796110.64,
+      "cash": 709095.48,
+      "market_value": 1087015.16,
+      "position_count": 5
     }
   ],
   "created_at": "2026-08-07T16:35:53.783239"

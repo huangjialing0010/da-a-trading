@@ -1,2 +1,2 @@
 time,type,code,name,strategy,action,reason,price,quantity,urgency
-2026-09-11T13:41:58.156416,SELL,000975,山金国际,deep_value,移动止盈：全部卖出 8300股,从高点29.26回撤13.2%，触发止盈,25.39,8300,urgent
+2026-10-16T14:05:07.952323,SELL,002558,巨人网络,deep_value,硬止损：全部卖出 8600股 @ 20.95,亏损-20.9%，触及硬止损线-20.0%,20.95,8600,urgent

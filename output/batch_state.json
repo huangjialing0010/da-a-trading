@@ -19,27 +19,5 @@
         "trigger": "stable"
       }
     ]
-  },
-  "002558": {
-    "name": "巨人网络",
-    "batch": 3,
-    "batches": [
-      {
-        "qty": 2600,
-        "price": 27.23,
-        "trigger": null
-      },
-      {
-        "qty": 2600,
-        "price": 24.51,
-        "trigger": 24.51
-      },
-      {
-        "qty": 3400,
-        "price": null,
-        "trigger": "stable"
-      }
-    ],
-    "last_batch_date": "2026-09-07"
   }
 }

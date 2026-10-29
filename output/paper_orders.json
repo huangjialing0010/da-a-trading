@@ -55,5 +55,33 @@
     "metadata": {
       "kind": "deep_exit"
     }
+  },
+  {
+    "order_id": "2cad703b21f5d61c1cf6",
+    "warehouse": "deep_value",
+    "code": "002558",
+    "name": "巨人网络",
+    "direction": "SELL",
+    "quantity": 8600,
+    "signal_trade_date": "2026-10-16",
+    "planned_trade_date": "2026-10-19",
+    "signal_reason": "亏损-20.9%，触及硬止损线-20.0%",
+    "reference_close": 20.95,
+    "strategy": "deep_value",
+    "position_qty_at_signal": 8600,
+    "close_position": true,
+    "status": "FILLED",
+    "attempts": 1,
+    "last_block_reason": "",
+    "fill_trade_date": "2026-10-19",
+    "open_price": 20.83,
+    "fill_price": 20.809169999999998,
+    "fees": 134.219147,
+    "gap_pct": -0.005727923627685039,
+    "created_at": "2026-10-16T14:05:07.970938",
+    "updated_at": "2026-10-19T16:34:01.535045",
+    "metadata": {
+      "kind": "deep_exit"
+    }
   }
 ]
