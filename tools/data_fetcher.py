@@ -32,6 +32,53 @@ MARKET_SOURCE_MAX_AGE_DAYS = 3
 MARKET_SOURCE_MAX_LAG_TRADING_DAYS = 1
 _MARKET_FETCH_ATTEMPTED: set[str] = set()
 
+# 财务期末日不代表公告已公开。只对有可核实公告日的代码/报告期提前放行；
+# 其余公司使用法定最后披露日作保守准入，避免供应商提前回填未来财务行。
+VERIFIED_REPORT_PUBLICATIONS = {
+    ("300750", "2026-09-30"): date(2026, 10, 21),
+    ("002049", "2026-09-30"): date(2026, 10, 27),
+}
+REPORT_PUBLICATION_DATES = {
+    "03-31": "05-01",
+    "06-30": "08-31",
+    "09-30": "10-31",
+    "12-31": "04-30",
+}
+
+
+def _financial_period_is_public(
+        period: str, as_of: date | None = None, code: str | None = None) -> bool:
+    as_of = as_of or _now_shanghai().date()
+    parsed = pd.to_datetime(period, errors="coerce")
+    if pd.isna(parsed):
+        return False
+    verified = VERIFIED_REPORT_PUBLICATIONS.get((str(code or "").zfill(6), str(period)[:10]))
+    if verified:
+        return as_of >= verified
+    period_date = parsed.date()
+    key = period_date.strftime("%m-%d")
+    limit = REPORT_PUBLICATION_DATES.get(key)
+    if not limit:
+        return False
+    month, day = limit.split("-")
+    public_by = date(period_date.year + (key == "12-31"), int(month), int(day))
+    return as_of >= public_by
+
+
+def _sanitize_financial_data(
+        result: dict, as_of: date | None = None, code: str | None = None) -> dict:
+    """去除尚未到保守披露截止日的期间同比，缓存读写共用。"""
+    if not isinstance(result, dict):
+        return {}
+    period = str(result.get("yoy_period", ""))
+    if not _financial_period_is_public(period, as_of, code):
+        result = dict(result)
+        result["unavailable_yoy_period"] = period
+        result["yoy_period"] = ""
+        for key in ("revenue_yoy", "profit_yoy", "deducted_profit_yoy"):
+            result.pop(key, None)
+    return result
+
 
 def _cache_path(subdir: Path, key: str, suffix: str = ".csv") -> str:
     subdir.mkdir(parents=True, exist_ok=True)
@@ -346,7 +393,7 @@ def fetch_financial_data(code: str, ttl_days: int = 30) -> dict:
     cache_file = _cache_path(FIN_DIR, f"{code}_ths", ".json")
     if _cache_valid(cache_file, ttl_days):
         with open(cache_file, "r", encoding="utf-8") as f:
-            return json.load(f)
+            return _sanitize_financial_data(json.load(f), code=code)
 
     result = {}
     try:
@@ -419,6 +466,8 @@ def fetch_financial_data(code: str, ttl_days: int = 30) -> dict:
         result["report_date"] = str(anne.get("报告期", ""))
         result["yoy_period"] = str(latest.get("报告期", ""))
 
+        result = _sanitize_financial_data(result, code=code)
+
         if result:
             with open(cache_file, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False)
@@ -426,7 +475,7 @@ def fetch_financial_data(code: str, ttl_days: int = 30) -> dict:
     except Exception as e:
         if os.path.exists(cache_file):
             with open(cache_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                return _sanitize_financial_data(json.load(f), code=code)
         print(f"[data_fetcher] THS {code} 财务数据失败: {e}")
 
     return result
