@@ -728,16 +728,16 @@
     "strategy": "trend_reversal",
     "position_qty_at_signal": 0,
     "close_position": false,
-    "status": "PENDING",
-    "attempts": 0,
+    "status": "FILLED",
+    "attempts": 1,
     "last_block_reason": "",
-    "fill_trade_date": "",
-    "open_price": 0.0,
-    "fill_price": 0.0,
-    "fees": 0.0,
-    "gap_pct": 0.0,
+    "fill_trade_date": "2026-10-30",
+    "open_price": 36.64,
+    "fill_price": 36.67664,
+    "fees": 42.178136,
+    "gap_pct": -0.0360431465403841,
     "created_at": "2026-10-29T16:19:07.956683",
-    "updated_at": "2026-10-29T16:19:07.956683",
+    "updated_at": "2026-10-30T16:09:54.410971",
     "metadata": {
       "selection_audit": {
         "version": 1,
@@ -839,6 +839,62 @@
           }
         ]
       }
+    }
+  },
+  {
+    "order_id": "94849028c0435ccf5f42",
+    "warehouse": "trend_v2",
+    "code": "688111",
+    "name": "金山办公",
+    "direction": "SELL",
+    "quantity": 900,
+    "signal_trade_date": "2026-10-30",
+    "planned_trade_date": "2026-11-02",
+    "signal_reason": "硬止损 -20.3%",
+    "reference_close": 209.16,
+    "strategy": "trend_reversal",
+    "position_qty_at_signal": 900,
+    "close_position": true,
+    "status": "PENDING",
+    "attempts": 0,
+    "last_block_reason": "",
+    "fill_trade_date": "",
+    "open_price": 0.0,
+    "fill_price": 0.0,
+    "fees": 0.0,
+    "gap_pct": 0.0,
+    "created_at": "2026-10-30T16:09:54.430769",
+    "updated_at": "2026-10-30T16:09:54.430769",
+    "metadata": {
+      "cooling": true
+    }
+  },
+  {
+    "order_id": "8d430208e0f03769394d",
+    "warehouse": "trend_v2",
+    "code": "000657",
+    "name": "中钨高新",
+    "direction": "SELL",
+    "quantity": 4600,
+    "signal_trade_date": "2026-10-30",
+    "planned_trade_date": "2026-11-02",
+    "signal_reason": "移动止盈 回撤31.7%",
+    "reference_close": 36.67664,
+    "strategy": "trend_reversal",
+    "position_qty_at_signal": 4600,
+    "close_position": true,
+    "status": "PENDING",
+    "attempts": 0,
+    "last_block_reason": "",
+    "fill_trade_date": "",
+    "open_price": 0.0,
+    "fill_price": 0.0,
+    "fees": 0.0,
+    "gap_pct": 0.0,
+    "created_at": "2026-10-30T16:09:54.449720",
+    "updated_at": "2026-10-30T16:09:54.449720",
+    "metadata": {
+      "cooling": false
     }
   }
 ]
