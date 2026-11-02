@@ -1,19 +1,20 @@
 # 复盘报告索引
 
-自动生成于 2026-10-30 16:09。日报按天、周报/月报按周期归档；最新报告置顶。
+自动生成于 2026-11-02 19:40。日报按天、周报/月报按周期归档；最新报告置顶。
 
 ## 最新报告
 
 | 类型 | 报告 | 周期 |
 |------|------|------|
-| 日报 | [daily_20261030.md](daily_20261030.md) | 2026-10-30 |
+| 日报 | [daily_20261102.md](daily_20261102.md) | 2026-11-02 |
 | 周报 | [weekly_20261030.md](weekly_20261030.md) | 2026-10-30 |
 | 趋势周报 | [trend_weekly_20261030.md](trend_weekly_20261030.md) | 2026-10-30 |
-| 月报 | [monthly_202609.md](monthly_202609.md) | 2026-09 |
-| 趋势月报 | [trend_monthly_202609.md](trend_monthly_202609.md) | 2026-09 |
+| 月报 | [monthly_202610.md](monthly_202610.md) | 2026-10 |
+| 趋势月报 | [trend_monthly_202610.md](trend_monthly_202610.md) | 2026-10 |
 
 ## 日报
 
+- 2026-11-02 [daily_20261102.md](daily_20261102.md)
 - 2026-10-30 [daily_20261030.md](daily_20261030.md)
 - 2026-10-29 [daily_20261029.md](daily_20261029.md)
 - 2026-10-28 [daily_20261028.md](daily_20261028.md)
@@ -137,12 +138,14 @@
 
 ## 月报
 
+- 2026-10 [monthly_202610.md](monthly_202610.md)
 - 2026-09 [monthly_202609.md](monthly_202609.md)
 - 2026-08 [monthly_202608.md](monthly_202608.md)
 - 2026-07 [monthly_202607.md](monthly_202607.md)
 
 ## 趋势月报
 
+- 2026-10 [trend_monthly_202610.md](trend_monthly_202610.md)
 - 2026-09 [trend_monthly_202609.md](trend_monthly_202609.md)
 - 2026-08 [trend_monthly_202608.md](trend_monthly_202608.md)
 - 2026-07 [trend_monthly_202607.md](trend_monthly_202607.md)
