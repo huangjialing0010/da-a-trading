@@ -1,12 +1,12 @@
 {
-  "cash": 1077904.778337,
+  "cash": 703188.874775,
   "positions": {
     "600115": {
       "code": "600115",
       "name": "中国东航",
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
-      "current_price": 3.32,
+      "current_price": 3.43,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -14,7 +14,7 @@
       "name": "荣盛石化",
       "quantity": 15300,
       "avg_cost": 13.536903379999998,
-      "current_price": 11.86,
+      "current_price": 12.13,
       "strategy": "trend_reversal"
     },
     "300418": {
@@ -22,7 +22,23 @@
       "name": "昆仑万维",
       "quantity": 4500,
       "avg_cost": 41.05126025,
-      "current_price": 36.14,
+      "current_price": 36.22,
+      "strategy": "trend_reversal"
+    },
+    "002384": {
+      "code": "002384",
+      "name": "东山精密",
+      "quantity": 1800,
+      "avg_cost": 90.35282255999998,
+      "current_price": 90.33023999999999,
+      "strategy": "trend_reversal"
+    },
+    "000657": {
+      "code": "000657",
+      "name": "中钨高新",
+      "quantity": 5800,
+      "avg_cost": 36.56565913,
+      "current_price": 36.55652,
       "strategy": "trend_reversal"
     }
   },
@@ -176,6 +192,26 @@
       "quantity": 900,
       "reason": "硬止损 -20.3% [paper_order:94849028c0435ccf5f42]",
       "pnl": -43831.714499999944
+    },
+    {
+      "time": "2026-11-03T09:30:00",
+      "code": "002384",
+      "name": "东山精密",
+      "direction": "BUY",
+      "price": 90.33023999999999,
+      "quantity": 1800,
+      "reason": "趋势入场: 利润改善+254.9pp, ROE=12.9% [paper_order:937e2103e189d84f468f]",
+      "pnl": 0.0
+    },
+    {
+      "time": "2026-11-03T09:30:00",
+      "code": "000657",
+      "name": "中钨高新",
+      "direction": "BUY",
+      "price": 36.55652,
+      "quantity": 5800,
+      "reason": "趋势入场: 利润改善+264.3pp, ROE=19.3% [paper_order:fd809f47ad9258db3287]",
+      "pnl": 0.0
     }
   ],
   "equity_snapshots": [
@@ -521,6 +557,13 @@
       "cash": 1077904.78,
       "market_value": 703976.0,
       "position_count": 3
+    },
+    {
+      "date": "2026-11-03",
+      "total_value": 1798202.12,
+      "cash": 703188.87,
+      "market_value": 1095013.25,
+      "position_count": 5
     }
   ],
   "created_at": "2026-08-07T16:35:53.783239"
