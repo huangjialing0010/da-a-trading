@@ -1,12 +1,12 @@
 {
-  "cash": 675118.3194020002,
+  "cash": 846817.4484020001,
   "positions": {
     "600115": {
       "code": "600115",
       "name": "中国东航",
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
-      "current_price": 3.53,
+      "current_price": 3.67,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -14,7 +14,7 @@
       "name": "荣盛石化",
       "quantity": 15300,
       "avg_cost": 13.536903379999998,
-      "current_price": 11.77,
+      "current_price": 11.74,
       "strategy": "trend_reversal"
     },
     "300418": {
@@ -22,7 +22,7 @@
       "name": "昆仑万维",
       "quantity": 4500,
       "avg_cost": 41.05126025,
-      "current_price": 40.13,
+      "current_price": 41.91,
       "strategy": "trend_reversal"
     },
     "000657": {
@@ -30,15 +30,7 @@
       "name": "中钨高新",
       "quantity": 5400,
       "avg_cost": 39.279047307499994,
-      "current_price": 39.26922999999999,
-      "strategy": "trend_reversal"
-    },
-    "002384": {
-      "code": "002384",
-      "name": "东山精密",
-      "quantity": 2000,
-      "avg_cost": 81.73205790749998,
-      "current_price": 81.71162999999999,
+      "current_price": 40.9,
       "strategy": "trend_reversal"
     }
   },
@@ -292,6 +284,16 @@
       "quantity": 2000,
       "reason": "趋势入场: 利润改善+254.9pp, ROE=12.9% [paper_order:a86088b94ecc8b318683]",
       "pnl": 0.0
+    },
+    {
+      "time": "2026-11-10T09:30:00",
+      "code": "002384",
+      "name": "东山精密",
+      "direction": "SELL",
+      "price": 85.914,
+      "quantity": 2000,
+      "reason": "移动止盈 回撤41.5% [paper_order:121f42043196abc6e127]",
+      "pnl": 8235.013185000018
     }
   ],
   "equity_snapshots": [
@@ -672,6 +674,13 @@
       "cash": 675118.32,
       "market_value": 1118795.1,
       "position_count": 5
+    },
+    {
+      "date": "2026-11-10",
+      "total_value": 1833722.45,
+      "cash": 846817.45,
+      "market_value": 986905.0,
+      "position_count": 4
     }
   ],
   "created_at": "2026-08-07T16:35:53.783239"
