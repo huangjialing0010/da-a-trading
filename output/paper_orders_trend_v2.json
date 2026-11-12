@@ -1928,6 +1928,34 @@
     "strategy": "trend_reversal",
     "position_qty_at_signal": 2000,
     "close_position": true,
+    "status": "FILLED",
+    "attempts": 1,
+    "last_block_reason": "",
+    "fill_trade_date": "2026-11-12",
+    "open_price": 94.1,
+    "fill_price": 94.0059,
+    "fees": 141.00885,
+    "gap_pct": 0.10882276487372033,
+    "created_at": "2026-11-11T17:20:48.066636",
+    "updated_at": "2026-11-12T17:42:51.961137",
+    "metadata": {
+      "cooling": false
+    }
+  },
+  {
+    "order_id": "1498c8b74248d1b5461b",
+    "warehouse": "trend_v2",
+    "code": "002384",
+    "name": "东山精密",
+    "direction": "BUY",
+    "quantity": 1800,
+    "signal_trade_date": "2026-11-12",
+    "planned_trade_date": "2026-11-13",
+    "signal_reason": "趋势入场: 利润改善+317.7pp, ROE=22.1%",
+    "reference_close": 93.69,
+    "strategy": "trend_reversal",
+    "position_qty_at_signal": 0,
+    "close_position": false,
     "status": "PENDING",
     "attempts": 0,
     "last_block_reason": "",
@@ -1936,10 +1964,109 @@
     "fill_price": 0.0,
     "fees": 0.0,
     "gap_pct": 0.0,
-    "created_at": "2026-11-11T17:20:48.066636",
-    "updated_at": "2026-11-11T17:20:48.066636",
+    "created_at": "2026-11-12T17:42:52.157573",
+    "updated_at": "2026-11-12T17:42:52.157573",
     "metadata": {
-      "cooling": false
+      "selection_audit": {
+        "version": 1,
+        "sort_rule": "improvement_desc",
+        "selected_rank": 1,
+        "eligible_count": 7,
+        "selection_slots": 1,
+        "max_positions": 5,
+        "held_positions_at_signal": 4,
+        "pending_buys_at_signal": 0,
+        "sizing_basis": "20_percent_available_cash",
+        "available_cash_before_order": 864916.25,
+        "order_budget": 172983.25,
+        "account_value_at_signal": 1824923.25,
+        "ranked_eligible_candidates": [
+          {
+            "rank": 1,
+            "code": "002384",
+            "name": "东山精密",
+            "improvement_pp": 317.7,
+            "current_yoy_pct": 332.3,
+            "previous_yoy_pct": 14.6,
+            "roe_pct": 22.1,
+            "debt_ratio_pct": 65.0,
+            "report_date": "2026-09-30",
+            "reference_price": 93.69
+          },
+          {
+            "rank": 2,
+            "code": "601872",
+            "name": "招商轮船",
+            "improvement_pp": 265.2,
+            "current_yoy_pct": 263.1,
+            "previous_yoy_pct": -2.1,
+            "roe_pct": 26.2,
+            "debt_ratio_pct": 43.0,
+            "report_date": "2026-09-30",
+            "reference_price": 15.67
+          },
+          {
+            "rank": 3,
+            "code": "688072",
+            "name": "拓荆科技",
+            "improvement_pp": 231.7,
+            "current_yoy_pct": 336.8,
+            "previous_yoy_pct": 105.1,
+            "roe_pct": 25.8,
+            "debt_ratio_pct": 45.5,
+            "report_date": "2026-09-30",
+            "reference_price": 512.81
+          },
+          {
+            "rank": 4,
+            "code": "600026",
+            "name": "中远海能",
+            "improvement_pp": 193.3,
+            "current_yoy_pct": 171.9,
+            "previous_yoy_pct": -21.4,
+            "roe_pct": 14.8,
+            "debt_ratio_pct": 47.7,
+            "report_date": "2026-09-30",
+            "reference_price": 16.71
+          },
+          {
+            "rank": 5,
+            "code": "000977",
+            "name": "浪潮信息",
+            "improvement_pp": 150.0,
+            "current_yoy_pct": 165.3,
+            "previous_yoy_pct": 15.3,
+            "roe_pct": 16.6,
+            "debt_ratio_pct": 85.4,
+            "report_date": "2026-09-30",
+            "reference_price": 55.98
+          },
+          {
+            "rank": 6,
+            "code": "000807",
+            "name": "云铝股份",
+            "improvement_pp": 148.9,
+            "current_yoy_pct": 164.0,
+            "previous_yoy_pct": 15.1,
+            "roe_pct": 31.3,
+            "debt_ratio_pct": 15.3,
+            "report_date": "2026-09-30",
+            "reference_price": 23.31
+          },
+          {
+            "rank": 7,
+            "code": "002648",
+            "name": "卫星化学",
+            "improvement_pp": 139.6,
+            "current_yoy_pct": 141.2,
+            "previous_yoy_pct": 1.7,
+            "roe_pct": 24.4,
+            "debt_ratio_pct": 50.1,
+            "report_date": "2026-09-30",
+            "reference_price": 23.2
+          }
+        ]
+      }
     }
   }
 ]
