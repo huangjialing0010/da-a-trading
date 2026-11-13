@@ -1,12 +1,12 @@
 {
-  "cash": 864916.247162,
+  "cash": 691900.2039620001,
   "positions": {
     "600115": {
       "code": "600115",
       "name": "中国东航",
       "quantity": 108400,
       "avg_cost": 3.6846009200000003,
-      "current_price": 3.52,
+      "current_price": 3.49,
       "strategy": "trend_reversal"
     },
     "002493": {
@@ -14,7 +14,7 @@
       "name": "荣盛石化",
       "quantity": 15300,
       "avg_cost": 13.536903379999998,
-      "current_price": 11.37,
+      "current_price": 11.25,
       "strategy": "trend_reversal"
     },
     "300418": {
@@ -22,7 +22,7 @@
       "name": "昆仑万维",
       "quantity": 4500,
       "avg_cost": 41.05126025,
-      "current_price": 40.9,
+      "current_price": 40.14,
       "strategy": "trend_reversal"
     },
     "000657": {
@@ -30,7 +30,15 @@
       "name": "中钨高新",
       "quantity": 5400,
       "avg_cost": 39.279047307499994,
-      "current_price": 40.82,
+      "current_price": 38.46,
+      "strategy": "trend_reversal"
+    },
+    "002384": {
+      "code": "002384",
+      "name": "东山精密",
+      "quantity": 1800,
+      "avg_cost": 96.12002399999999,
+      "current_price": 96.09599999999999,
       "strategy": "trend_reversal"
     }
   },
@@ -314,6 +322,16 @@
       "quantity": 2000,
       "reason": "移动止盈 回撤31.7% [paper_order:5c8ddd6d80acfee6be9b]",
       "pnl": 18098.798759999976
+    },
+    {
+      "time": "2026-11-13T09:30:00",
+      "code": "002384",
+      "name": "东山精密",
+      "direction": "BUY",
+      "price": 96.09599999999999,
+      "quantity": 1800,
+      "reason": "趋势入场: 利润改善+317.7pp, ROE=22.1% [paper_order:1498c8b74248d1b5461b]",
+      "pnl": 0.0
     }
   ],
   "equity_snapshots": [
@@ -715,6 +733,13 @@
       "cash": 864916.25,
       "market_value": 960007.0,
       "position_count": 4
+    },
+    {
+      "date": "2026-11-13",
+      "total_value": 1803628.0,
+      "cash": 691900.2,
+      "market_value": 1111727.8,
+      "position_count": 5
     }
   ],
   "created_at": "2026-08-07T16:35:53.783239"

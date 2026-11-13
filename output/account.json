@@ -6,7 +6,7 @@
       "name": "分众传媒",
       "quantity": 31100,
       "avg_cost": 4.82,
-      "current_price": 5.33,
+      "current_price": 5.49,
       "strategy": "deep_value"
     }
   },
@@ -692,6 +692,13 @@
       "total_value": 1015314.03,
       "cash": 849551.03,
       "market_value": 165763.0,
+      "position_count": 1
+    },
+    {
+      "date": "2026-11-13",
+      "total_value": 1020290.03,
+      "cash": 849551.03,
+      "market_value": 170739.0,
       "position_count": 1
     }
   ],

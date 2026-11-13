@@ -1956,16 +1956,16 @@
     "strategy": "trend_reversal",
     "position_qty_at_signal": 0,
     "close_position": false,
-    "status": "PENDING",
-    "attempts": 0,
+    "status": "FILLED",
+    "attempts": 1,
     "last_block_reason": "",
-    "fill_trade_date": "",
-    "open_price": 0.0,
-    "fill_price": 0.0,
-    "fees": 0.0,
-    "gap_pct": 0.0,
+    "fill_trade_date": "2026-11-13",
+    "open_price": 96.0,
+    "fill_price": 96.09599999999999,
+    "fees": 43.2432,
+    "gap_pct": 0.024655779699007452,
     "created_at": "2026-11-12T17:42:52.157573",
-    "updated_at": "2026-11-12T17:42:52.157573",
+    "updated_at": "2026-11-13T17:36:14.247443",
     "metadata": {
       "selection_audit": {
         "version": 1,
@@ -2067,6 +2067,34 @@
           }
         ]
       }
+    }
+  },
+  {
+    "order_id": "78ae44d8b225d6e80c9e",
+    "warehouse": "trend_v2",
+    "code": "002384",
+    "name": "东山精密",
+    "direction": "SELL",
+    "quantity": 1800,
+    "signal_trade_date": "2026-11-13",
+    "planned_trade_date": "2026-11-16",
+    "signal_reason": "移动止盈 回撤22.0%",
+    "reference_close": 96.09599999999999,
+    "strategy": "trend_reversal",
+    "position_qty_at_signal": 1800,
+    "close_position": true,
+    "status": "PENDING",
+    "attempts": 0,
+    "last_block_reason": "",
+    "fill_trade_date": "",
+    "open_price": 0.0,
+    "fill_price": 0.0,
+    "fees": 0.0,
+    "gap_pct": 0.0,
+    "created_at": "2026-11-13T17:36:14.267954",
+    "updated_at": "2026-11-13T17:36:14.267954",
+    "metadata": {
+      "cooling": false
     }
   }
 ]
